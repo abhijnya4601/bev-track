@@ -1,0 +1,10 @@
+[project]
+name = "bev-track"
+version = "0.1.0"
+description = "Multi-camera BEV 3D detection & tracking on nuScenes-mini, with a slicing evaluation harness"
+requires-python = ">=3.8"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]

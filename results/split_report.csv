@@ -1,0 +1,11 @@
+scene,mini_split,official_split,seen_by_pretrained,lighting,weather,location,n_samples,n_car,n_pedestrian,n_cyclist,n_truck,n_barrier,description
+scene-0061,mini_train,train,True,day,dry,singapore-onenorth,39,348,1393,127,221,1540,"Parked truck, construction, intersection, turn left, following a van"
+scene-0103,mini_val,val,False,day,dry,boston-seaport,40,970,931,57,38,0,"Many peds right, wait for turning car, long bike rack left, cyclist"
+scene-0553,mini_train,val,False,day,dry,boston-seaport,41,641,464,28,76,634,"Wait at intersection, bicycle, large truck, peds crossing crosswalk, ped with stroller"
+scene-0655,mini_train,train,True,day,dry,boston-seaport,41,1631,151,0,279,0,"Parking lot, parked cars, jaywalker, bendy bus, gardening vehicles"
+scene-0757,mini_train,train,True,day,dry,boston-seaport,41,297,45,22,105,0,"Arrive at busy intersection, bus, wait at intersection, bicycle, peds"
+scene-0796,mini_train,val,False,day,dry,singapore-queenstown,40,472,165,19,29,4,"Scooter, peds on sidewalk, bus, cars, truck, fake construction worker, bicycle, cross intersection, car overtaking us"
+scene-0916,mini_val,val,False,day,dry,singapore-queenstown,41,1598,427,254,86,0,"Parking lot, bicycle rack, parked bicycles, bus, many peds, parked scooters, parked motorcycle"
+scene-1077,mini_train,train,True,night,dry,singapore-hollandvillage,41,713,0,12,11,145,"Night, big street, bus stop, high speed, construction vehicle"
+scene-1094,mini_train,train,True,night,rain,singapore-hollandvillage,40,571,1062,94,0,0,"Night, after rain, many peds, PMD, ped with bag, jaywalker, truck, scooter"
+scene-1100,mini_train,train,True,night,dry,singapore-hollandvillage,40,378,402,101,0,0,"Night, peds in sidewalk, peds cross crosswalk, scooter, PMD, difficult lighting"

@@ -1,0 +1,12 @@
+# CPU-only environment for the eval harness, tracker, tests and notebook (Python 3.8-3.12).
+# The GPU model stack lives in docker/Dockerfile. It is kept separate on purpose so the
+# eval code can run on a laptop.
+numpy>=1.19,<2
+scipy
+matplotlib>=3.5
+pyquaternion
+nuscenes-devkit
+motmetrics>=1.2        # tests only: cross-checks src/eval/track_metrics.py
+pandas<3               # motmetrics 1.4 is incompatible with pandas 3
+pytest
+nbformat               # notebook

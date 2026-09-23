@@ -1,0 +1,33 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  eval-harness:
+    # 22.04 still provides Python 3.8, which is what the GPU/BEVFormer environment pins.
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.8", "3.11"]
+    steps:
+      - uses: actions/checkout@v4   # the BEVFormer submodule is not needed for CPU tests
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install
+        run: |
+          pip install -r requirements-eval.txt
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Unit tests (eval code, tracker, geometry, checkpoint surgery)
+        run: pytest -q
+      - name: Smoke test the full CPU pipeline on synthetic data
+        run: |
+          python -m src.synthetic --out-dir /tmp/synth
+          python -m src.eval.slice_eval --gt /tmp/synth/gt.json --pred /tmp/synth/preds.json --out /tmp/synth/results
+          python -m src.eval.failure_cases --gt /tmp/synth/gt.json --pred /tmp/synth/preds.json --out /tmp/synth/results/failures -n 2
+          python -m src.track --gt /tmp/synth/gt.json --pred /tmp/synth/preds.json --out /tmp/synth/results/tracks.json --metrics-out /tmp/synth/results/tracking.csv
+          test -s /tmp/synth/results/metrics_by_distance.csv

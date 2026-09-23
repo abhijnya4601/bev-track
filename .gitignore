@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.ipynb_checkpoints/
+
+# data, checkpoints, training outputs
+data/nuscenes/
+data/can_bus/
+data/processed/
+data/synthetic/
+ckpts/
+work_dirs/
+*.pth
+*.pkl
+
+# results: keep the curated CSVs/images committed, ignore scratch runs
+results/devkit/
+results/tracks.json
+*SYNTHETIC*
+dist/
