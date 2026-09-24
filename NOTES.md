@@ -125,8 +125,9 @@ loading (2 CPU cores decoding 18 JPEGs per step).
 - [x] Download v1.0-mini; run `data/prepare_nuscenes.py report` and `gt`
 - [x] Get the CAN bus expansion (login) → Drive
 - [x] Run notebooks/colab_gpu.ipynb on a free T4
-- [ ] Head-only fine-tune ablation
-- [ ] Tracker on baseline detections; score-threshold sweep
+- [x] Head-only fine-tune ablation: 0.432 mAP (recovers 4.4 of 6.4 points; still below relabeling)
+- [x] Interactive demo on GitHub Pages
+- [ ] Tracker score-threshold sweep / AMOTA: single-threshold MOTA ranked the models opposite to mAP
 - [ ] GPU box: build docker image, run `scripts/gpu_pipeline.sh` step by step
 - [ ] Sanity: `run_official_devkit_eval` (10-class, mini_val) on the pretrained model should land near
       BEVFormer's full-val numbers (NDS 35.4 / mAP 25.2), allowing for 2-scene noise

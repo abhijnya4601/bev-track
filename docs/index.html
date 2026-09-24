@@ -467,6 +467,14 @@ footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line);
         + (drops.length ? ` <b>${drops[0][0]}</b> degrades fastest (AP ${fmt(pd[B[0]][drops[0][0]])} → ${fmt(pd[B[1]][drops[0][0]])}, −${Math.round(drops[0][1] * 100)}%).` : ''),
       `Tracking on ${lab(top).toLowerCase()} detections: MOTA ${fmt(trk.ALL.MOTA)}, ${trk.ALL.IDSW} ID switches, ${trk.ALL.FRAG} fragmentations.`
         + (trkCls.length > 1 ? ` Best-tracked class: ${trkCls[0]} (MOTA ${fmt(trk[trkCls[0]].MOTA)}); worst: ${trkCls[trkCls.length - 1]} (${fmt(trk[trkCls[trkCls.length - 1]].MOTA)}). Switch the viewer to <i>Tracks</i> to see identities change.` : ''),
+      ...(() => {
+        const bestT = [...MODELS].sort((a, b) => D.models[b].tracking.ALL.MOTA - D.models[a].tracking.ALL.MOTA)[0];
+        if (bestT === top) return [];
+        const perFrame = (m) => (D.models[m].frames.reduce((n, f) => n + f.preds.filter((p) => p[6] >= 0.3).length, 0) / D.frames.length).toFixed(0);
+        return [`Tracking ranks the models differently: ${lab(bestT).toLowerCase()} gets the highest MOTA (${fmt(D.models[bestT].tracking.ALL.MOTA)}) despite lower mAP. `
+          + `At the single 0.3 threshold it passes ${perFrame(bestT)} boxes per frame to the tracker vs ${perFrame(top)}, so fewer false positives reach it. `
+          + `MOTA at one threshold rewards score calibration as much as detection quality, which is why nuScenes' official tracking metric (AMOTA) averages over thresholds.`];
+      })(),
       `Drag the score slider: a higher threshold removes false positives (red dotted) but adds misses (red solid). The counts are recomputed live with the devkit's greedy 2 m matching.`,
     ];
     $('#findings').innerHTML = items.map((x) => `<li>${x}</li>`).join('');

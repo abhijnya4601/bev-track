@@ -4,6 +4,9 @@ Multi-camera BEV 3D detection (BEVFormer-tiny) and tracking (AB3DMOT) on nuScene
 evaluation harness that reports performance **by class, distance and scene condition** instead of
 one aggregate number.
 
+> **[Interactive demo →](https://abhijnya4601.github.io/bev-track/)**: step through the held-out scenes in
+> bird's-eye view, compare the three models, and adjust the score threshold.
+>
 > **Status:** end-to-end pipeline has run on a free Colab T4 (2026-09-24). Detection results below are
 > real, on the 4 held-out scenes. With 162 samples and 4,667 GT objects, treat differences of a few
 > mAP points as noise.
@@ -70,14 +73,17 @@ because no attributes are predicted, so it is lower than a devkit NDS would be.
 |---|---|---|---|---|---|---|---|
 | **Pretrained, 10 classes relabeled to 5 (no training)** | **0.452** | **0.436** | 0.453 | 0.441 | 0.223 | 0.352 | 0.793 |
 | Fine-tuned (neck/encoder 0.1×, transformer 0.5×, heads 1×; 12 ep) | 0.388 | 0.379 | 0.426 | 0.376 | 0.193 | 0.366 | 0.579 |
-| Fine-tuned, head only (4 ep) | _pending_ | | | | | | |
+| Fine-tuned, head only (4 ep) | 0.432 | 0.413 | 0.447 | 0.440 | 0.228 | 0.311 | 0.737 |
 
 **Fine-tuning hurt (−6.4 mAP).** The 5-class taxonomy is a pure merge of existing nuScenes classes,
 so relabeling the pretrained model's outputs already solves the task at zero cost. Tuning the
 transformer on 242 samples from 6 scenes can then only move the model toward those scenes, and
 barrier, whose test instances come from a single Boston scene unlike the training barriers, lost
-the most (0.79 → 0.58). The head-only run tests whether the damage comes from updating the shared
-representation.
+the most (0.79 → 0.58). **Head-only fine-tuning recovers 4.4 of the 6.4 points**, so most of the damage
+came from updating the shared representation. Car, pedestrian and cyclist are unchanged vs the
+baseline (±0.01), but the head alone still loses 4–6 points on truck and barrier, the two classes
+whose training instances look least like the test ones. Conclusion: when a new taxonomy is a merge of
+existing classes, relabel the outputs; don't fine-tune on mini-scale data.
 
 **By distance (pretrained):** mAP 0.591 (0–20 m) → 0.367 (20–40 m) → 0.044 (40 m+). Cyclists fall
 fastest: 0.41 → 0.07. The fine-tuned model shows the same shape, shifted down.
@@ -94,14 +100,26 @@ mislocalized (a same-class GT within 2–4 m), 670 duplicates and 134 class conf
 2,066 of the worst-matched boxes are dominated by translation error. Renders are in
 `results/failure_examples/`.
 
-**Tracking (fine-tuned detections, score ≥ 0.3):** MOTA 0.210, MOTP 0.86 m, 448 ID switches,
-327 fragmentations over 4,667 GT. Barrier (static) tracks well (MOTA 0.80). Cars and pedestrians
-have many ID switches in the two dense parking-lot scenes (0103, 0916), which account for 410 of
-the 448.
+**Tracking (AB3DMOT, score ≥ 0.3, 2 m CLEAR-MOT):**
+
+| detections from | MOTA | MOTP (m) | ID switches | fragmentations |
+|---|---|---|---|---|
+| Pretrained, relabeled | 0.195 | 0.83 | 536 | 293 |
+| Fine-tuned, head only | 0.183 | 0.85 | 543 | 295 |
+| Fine-tuned, most layers | 0.210 | 0.86 | 448 | 327 |
+
+Tracking ranks the models **opposite** to detection. The best detector gets the lowest MOTA because
+at a fixed 0.3 threshold it passes more boxes per frame to the tracker (35 vs 31), so more false
+positives reach it. MOTA at a single threshold rewards score calibration as much as detection
+quality, which is why nuScenes' official metric (AMOTA) averages over thresholds. Static barriers
+track well (MOTA 0.80–0.91). Cars and pedestrians switch IDs mostly in the two dense parking-lot
+scenes (0103, 0916).
 
 ## BEV visualizations
 
-`notebooks/visualize_bev.ipynb`: frame grids, AP-by-distance small multiples, and a track GIF.
+The [interactive demo](https://abhijnya4601.github.io/bev-track/) (`docs/`, built by
+`scripts/build_demo.py`) shows every held-out frame. `notebooks/visualize_bev.ipynb` has static
+frame grids and a track GIF.
 
 ## Failure analysis
 
