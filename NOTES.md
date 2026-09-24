@@ -121,6 +121,21 @@ Added `mAP*` = mean over classes present in every slice of an axis.
 Training time: 12 epochs × 242 iters at ~2 s/iter = 1 h 40 min on a free T4; ~0.7 s/iter was data
 loading (2 CPU cores decoding 18 JPEGs per step).
 
+## 2026-09-24: LiDAR, late fusion, confidence intervals
+
+- **LiDAR baseline = CenterPoint** from the mmdet3d **0.17.1** model zoo (56.2 mAP / 64.4 NDS on full val).
+  Chosen because it runs on the exact mmdet3d build already compiled and cached for BEVFormer: no new
+  environment. Also trained on the official train split, so the `clean` scenes stay held out.
+  The BEVFormer info files already carry `lidar_path` + 10 `sweeps`, so no new data prep.
+- **Late fusion** (`src/fusion.py`): pair LiDAR and camera boxes per class within a radius, keep LiDAR
+  geometry, noisy-OR the scores, down-weight unconfirmed camera boxes. Parameters fixed a priori.
+  Tuning them on the 4 eval scenes would leak. Called "late fusion" everywhere, never "sensor fusion
+  model".
+- **Bootstrap CIs** (`src/eval/bootstrap.py`): matching is per-frame independent, so it runs once and
+  each resample is a reweighting. 1000 resamples × 5 models takes ~10 s. Paired differences use the same
+  resampled frames for every model. Frame-level resampling ignores within-scene correlation, so the
+  intervals are optimistic, and that caveat is printed with every result.
+
 ## Next
 - [x] Download v1.0-mini; run `data/prepare_nuscenes.py report` and `gt`
 - [x] Get the CAN bus expansion (login) → Drive

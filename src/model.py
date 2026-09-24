@@ -109,8 +109,10 @@ def export(config: str, checkpoint: str, out: str, bevformer_root: str = 'third_
            ann_file: str = None) -> None:
     """Run inference with BEVFormer's own test loop and write BEV-Track predictions (ego frame).
 
-    Works for the unmodified 10-class checkpoint too (pass the upstream config plus ``ann_file``); its
-    labels are mapped to the 5 classes here, so both models go through the same eval path.
+    Works for any mmdet3d-0.17 nuScenes detector whose outputs are ``pts_bbox`` LiDARInstance3DBoxes:
+    the unmodified 10-class BEVFormer checkpoint (upstream config + ``ann_file``), the 5-class fine-tunes,
+    and the CenterPoint LiDAR baseline. 10-class labels are mapped to the 5 classes here, so every model
+    goes through the same eval path.
     """
     root = os.path.abspath(bevformer_root)
     sys.path.insert(0, root)
@@ -143,7 +145,8 @@ def export(config: str, checkpoint: str, out: str, bevformer_root: str = 'third_
             cfg.data.test.ann_file = ann_file
         dataset = build_dataset(cfg.data.test)
         loader = build_dataloader(dataset, samples_per_gpu=1, workers_per_gpu=cfg.data.workers_per_gpu,
-                                  dist=True, shuffle=False, nonshuffler_sampler=cfg.data.nonshuffler_sampler)
+                                  dist=True, shuffle=False,
+                                  nonshuffler_sampler=cfg.data.get('nonshuffler_sampler', dict(type='DistributedSampler')))
         model = build_model(cfg.model, test_cfg=cfg.get('test_cfg'))
         if cfg.get('fp16', None) is not None:
             wrap_fp16_model(model)

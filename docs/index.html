@@ -15,7 +15,7 @@
   --ink-3: #8a8983;
   --line: #e2e1dc;
   --grid: #ecebe6;
-  --m0: #2a78d6; --m1: #eb6834; --m2: #1baf7a;
+  --m0: #2a78d6; --m1: #eb6834; --m2: #1baf7a; --m3: #eda100; --m4: #e87ba4;
   --critical: #d03b3b;
   --critical-fill: rgba(208, 59, 59, 0.14);
   --gt: #3a3a37;
@@ -28,7 +28,7 @@
     color-scheme: dark;
     --bg: #121211; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --ink-3: #8d8c85;
     --line: #2d2d2b; --grid: #262624;
-    --m0: #3987e5; --m1: #d95926; --m2: #199e70;
+    --m0: #3987e5; --m1: #d95926; --m2: #199e70; --m3: #c98500; --m4: #d55181;
     --critical-fill: rgba(208, 59, 59, 0.22);
     --gt: #e4e3dc; --gt-faint: rgba(228, 227, 220, 0.25); --ring: #34342f; --accent-bg: #1c2633;
   }
@@ -37,7 +37,7 @@
   color-scheme: dark;
   --bg: #121211; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --ink-3: #8d8c85;
   --line: #2d2d2b; --grid: #262624;
-  --m0: #3987e5; --m1: #d95926; --m2: #199e70;
+  --m0: #3987e5; --m1: #d95926; --m2: #199e70; --m3: #c98500; --m4: #d55181;
   --critical-fill: rgba(208, 59, 59, 0.22);
   --gt: #e4e3dc; --gt-faint: rgba(228, 227, 220, 0.25); --ring: #34342f; --accent-bg: #1c2633;
 }
@@ -54,7 +54,7 @@ a { color: var(--m0); }
 .sub { color: var(--ink-2); font-size: 13px; }
 .banner { background: var(--critical-fill); border: 1px solid var(--critical); border-radius: 8px;
   padding: 10px 14px; margin: 16px 0; font-weight: 600; }
-.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 22px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-top: 22px; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px;
   cursor: pointer; text-align: left; font: inherit; color: inherit; }
 .card[aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: -1px; }
@@ -63,6 +63,8 @@ a { color: var(--m0); }
 .card .big { font-size: 28px; font-weight: 650; font-variant-numeric: tabular-nums; margin-top: 4px; }
 .card .big small { font-size: 13px; font-weight: 500; color: var(--ink-2); margin-left: 6px; }
 .card .best { font-size: 12px; color: var(--ink-2); }
+.card .ci { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.card .sensor { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-3); }
 .viewer { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; margin-top: 16px; }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
 .bev-wrap { position: relative; }
@@ -113,9 +115,10 @@ footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line);
 <main>
   <header>
     <h1>BEV-Track</h1>
-    <p class="lede">Camera-only 3D detection (BEVFormer-tiny) and tracking (AB3DMOT) on nuScenes-mini,
-      evaluated by class, distance and condition. Everything below is on <b>4 held-out scenes</b> the
-      pretrained model never trained on. Step through them to see where each model hits and misses.</p>
+    <p class="lede">3D object detection from cameras (BEVFormer-tiny), from LiDAR (CenterPoint) and from a
+      late fusion of both, plus tracking (AB3DMOT), on nuScenes-mini, evaluated by class, distance and
+      condition. Everything below is on <b>4 held-out scenes</b> that neither pretrained model trained on.
+      Step through them to see where each model hits and misses.</p>
     <p class="sub"><a href="https://github.com/abhijnya4601/bev-track">Code on GitHub</a> · 162 frames ·
       <span id="ngt"></span> ground-truth objects after nuScenes devkit filtering</p>
   </header>
@@ -189,10 +192,12 @@ footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line);
 
   <footer>
     Data: <a href="https://www.nuscenes.org/">nuScenes</a> (Motional), CC BY-NC-SA 4.0. Only box
-    coordinates derived from it are shown here. Model: <a href="https://github.com/fundamentalvision/BEVFormer">BEVFormer</a>-tiny,
-    public checkpoint. Split: the pretrained checkpoint was trained on nuScenes' official train split,
-    so evaluation uses only the mini scenes from the official val split (0103, 0553, 0796, 0916). All
-    four are daytime and dry, so lighting and weather could not be evaluated without leakage.
+    coordinates derived from it are shown here. Models: <a href="https://github.com/fundamentalvision/BEVFormer">BEVFormer</a>-tiny
+    (camera) and <a href="https://github.com/open-mmlab/mmdetection3d/tree/v0.17.1/configs/centerpoint">CenterPoint</a> (LiDAR),
+    public checkpoints, both trained on nuScenes' official train split. Evaluation therefore uses only the
+    mini scenes from the official val split (0103, 0553, 0796, 0916). All four are daytime and dry, so
+    lighting and weather could not be evaluated without leakage. "Fusion" here is late fusion of the two
+    models' finished boxes, not a jointly trained fusion network.
   </footer>
 </main>
 <div class="tooltip" id="tip"></div>
@@ -228,7 +233,9 @@ footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line);
     const s = D.models[m].summary;
     return `<button class="card" data-m="${m}" aria-pressed="${m === st.model}">
       <div class="name"><span class="swatch" style="background:var(--m${MODELS.indexOf(m)})"></span>${D.models[m].label}</div>
+      <div class="sensor">${D.models[m].sensor || 'camera'}</div>
       <div class="big">${fmt(s.mAP)}<small>mAP</small><small>NDS ${fmt(s.NDS)}</small></div>
+      <div class="ci">${D.models[m].ci95 && D.models[m].ci95.all ? `95% CI ${fmt(D.models[m].ci95.all[0])}–${fmt(D.models[m].ci95.all[1])}` : '&nbsp;'}</div>
       <div class="best">${m === best ? 'Best mAP' : '&nbsp;'}</div></button>`;
   }).join('');
   document.querySelectorAll('.card').forEach((c) => c.onclick = () => { st.model = c.dataset.m; syncModel(); draw(); });
@@ -430,7 +437,7 @@ footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line);
   function tables() {
     const bestOf = (vals) => Math.max(...vals.filter((v) => v !== null));
     let h = `<thead><tr><th>class</th><th>GT boxes</th>${MODELS.map((m) =>
-      `<th><span class="swatch" style="display:inline-block;background:var(--m${MODELS.indexOf(m)});margin-right:6px"></span>${D.models[m].label}</th>`).join('')}</tr></thead><tbody>`;
+      `<th title="${D.models[m].label}"><span class="swatch" style="display:inline-block;background:var(--m${MODELS.indexOf(m)});margin-right:6px"></span>${D.models[m].short || D.models[m].label}</th>`).join('')}</tr></thead><tbody>`;
     CLS.forEach((c) => {
       const vals = MODELS.map((m) => D.models[m].per_class[c].AP), b = bestOf(vals);
       h += `<tr><td>${c}</td><td>${D.models[MODELS[0]].per_class[c].n_gt}</td>${vals.map((v) => `<td class="${v === b ? 'top' : ''}">${fmt(v)}</td>`).join('')}</tr>`;
@@ -446,12 +453,36 @@ footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line);
     let t = `<thead><tr><th>model</th><th>MOTA</th><th>MOTP (m)</th><th>ID switches</th><th>fragmentations</th>
       <th>car MOTA</th><th>ped MOTA</th><th>barrier MOTA</th></tr></thead><tbody>`;
     MODELS.forEach((m) => { const k = D.models[m].tracking;
-      t += `<tr><td>${D.models[m].label}</td><td>${fmt(k.ALL.MOTA)}</td><td>${fmt(k.ALL.MOTP, 2)}</td><td>${k.ALL.IDSW}</td>
+      t += `<tr><td>${D.models[m].short || D.models[m].label}</td><td>${fmt(k.ALL.MOTA)}</td><td>${fmt(k.ALL.MOTP, 2)}</td><td>${k.ALL.IDSW}</td>
         <td>${k.ALL.FRAG}</td><td>${fmt(k.car.MOTA)}</td><td>${fmt(k.pedestrian.MOTA)}</td><td>${fmt(k.barrier.MOTA)}</td></tr>`; });
     $('#t-track').innerHTML = t + '</tbody>';
   }
+  function pairedText(a, b, slice) {  // "a - b" from the bootstrap, if present
+    const p = (D.paired || {})[`${a} - ${b}`] || null, q = (D.paired || {})[`${b} - ${a}`] || null;
+    const v = p ? p[slice] : q ? { diff: -q[slice].diff, ci95: [-q[slice].ci95[1], -q[slice].ci95[0]] } : null;
+    if (!v) return '';
+    const sig = v.ci95[0] > 0 || v.ci95[1] < 0;
+    return ` (paired difference ${v.diff >= 0 ? '+' : ''}${fmt(v.diff)}, 95% CI ${fmt(v.ci95[0])} to ${fmt(v.ci95[1])}${sig ? '' : ', not distinguishable from zero'})`;
+  }
+  function sensorFindings() {
+    const has = (m) => MODELS.includes(m), B = D.distance_buckets, out = [];
+    if (has('lidar') && has('pretrained')) {
+      const c = D.models.pretrained, l = D.models.lidar;
+      out.push(`<b>Camera vs LiDAR.</b> LiDAR mAP ${fmt(l.summary.mAP)} vs camera ${fmt(c.summary.mAP)}${pairedText('lidar', 'pretrained', 'all')}. `
+        + `By distance: ${B.map((b) => `${b} ${fmt(c.distance_mAP[b])} → ${fmt(l.distance_mAP[b])}`).join(', ')} (camera → LiDAR). `
+        + `Camera mAP keeps ${Math.round(100 * c.distance_mAP[B[1]] / c.distance_mAP[B[0]])}% of its near-range value at 20–40 m; LiDAR keeps ${Math.round(100 * l.distance_mAP[B[1]] / l.distance_mAP[B[0]])}%.`);
+    }
+    if (has('fused') && has('lidar')) {
+      const f = D.models.fused, l = D.models.lidar;
+      const gains = B.map((b) => [b, f.distance_mAP[b] - l.distance_mAP[b]]);
+      out.push(`<b>Late fusion vs LiDAR alone:</b> mAP ${fmt(f.summary.mAP)} vs ${fmt(l.summary.mAP)}${pairedText('fused', 'lidar', 'all')}. `
+        + `Change by distance: ${gains.map(([b, g]) => `${b} ${g >= 0 ? '+' : ''}${fmt(g)}`).join(', ')}. Fusion parameters were fixed in advance, not tuned on these scenes.`);
+    }
+    if (D.bootstrap_caveat) out.push(`<i>${D.bootstrap_caveat}</i>`);
+    return out;
+  }
   function findings() {
-    const s = (m) => D.models[m].summary, lab = (m) => D.models[m].label;
+    const s = (m) => D.models[m].summary, lab = (m) => D.models[m].short || D.models[m].label;
     const byMap = [...MODELS].sort((a, b) => s(b).mAP - s(a).mAP);
     const top = byMap[0], B = D.distance_buckets, dm = D.models[top].distance_mAP, pd = D.models[top].per_distance;
     // class with the largest relative AP drop from the nearest to the middle bucket (computed, not asserted)
@@ -461,17 +492,18 @@ footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line);
     const trkCls = CLS.filter((c) => trk[c] && trk[c].GT > 0 && trk[c].MOTA !== null)
       .sort((a, b) => trk[b].MOTA - trk[a].MOTA);
     const items = [
-      `<b>${lab(top)}</b> has the best mAP (${fmt(s(top).mAP)}), ahead of ${byMap.slice(1).map((m) => `${lab(m).toLowerCase()} (${fmt(s(m).mAP)})`).join(' and ')}.`
+      `<b>${lab(top)}</b> has the best mAP (${fmt(s(top).mAP)}), ahead of ${byMap.slice(1).map((m) => `${lab(m)} (${fmt(s(m).mAP)})`).join(', ')}.`
         + (top === 'pretrained' ? ' The 5 classes are merges of nuScenes classes, so relabeling the pretrained outputs already solves the task. Fine-tuning on 6 scenes can only move the model toward those scenes.' : ''),
       `Distance dominates: mAP falls from ${fmt(dm[B[0]])} within 20 m to ${fmt(dm[B[1]])} at 20–40 m and ${fmt(dm[B[2]])} beyond 40 m.`
         + (drops.length ? ` <b>${drops[0][0]}</b> degrades fastest (AP ${fmt(pd[B[0]][drops[0][0]])} → ${fmt(pd[B[1]][drops[0][0]])}, −${Math.round(drops[0][1] * 100)}%).` : ''),
-      `Tracking on ${lab(top).toLowerCase()} detections: MOTA ${fmt(trk.ALL.MOTA)}, ${trk.ALL.IDSW} ID switches, ${trk.ALL.FRAG} fragmentations.`
+      `Tracking on ${lab(top)} detections: MOTA ${fmt(trk.ALL.MOTA)}, ${trk.ALL.IDSW} ID switches, ${trk.ALL.FRAG} fragmentations.`
         + (trkCls.length > 1 ? ` Best-tracked class: ${trkCls[0]} (MOTA ${fmt(trk[trkCls[0]].MOTA)}); worst: ${trkCls[trkCls.length - 1]} (${fmt(trk[trkCls[trkCls.length - 1]].MOTA)}). Switch the viewer to <i>Tracks</i> to see identities change.` : ''),
+      ...sensorFindings(),
       ...(() => {
         const bestT = [...MODELS].sort((a, b) => D.models[b].tracking.ALL.MOTA - D.models[a].tracking.ALL.MOTA)[0];
         if (bestT === top) return [];
         const perFrame = (m) => (D.models[m].frames.reduce((n, f) => n + f.preds.filter((p) => p[6] >= 0.3).length, 0) / D.frames.length).toFixed(0);
-        return [`Tracking ranks the models differently: ${lab(bestT).toLowerCase()} gets the highest MOTA (${fmt(D.models[bestT].tracking.ALL.MOTA)}) despite lower mAP. `
+        return [`Tracking ranks the models differently: ${lab(bestT)} gets the highest MOTA (${fmt(D.models[bestT].tracking.ALL.MOTA)}) despite lower mAP. `
           + `At the single 0.3 threshold it passes ${perFrame(bestT)} boxes per frame to the tracker vs ${perFrame(top)}, so fewer false positives reach it. `
           + `MOTA at one threshold rewards score calibration as much as detection quality, which is why nuScenes' official tracking metric (AMOTA) averages over thresholds.`];
       })(),

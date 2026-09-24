@@ -35,7 +35,12 @@ PRED_FIELDS = ["x", "y", "w", "l", "yaw", "cls", "score"]
 TRACK_FIELDS = ["x", "y", "w", "l", "yaw", "cls", "track"]
 LABELS = {"pretrained": "Pretrained, relabeled (no training)",
           "headonly": "Fine-tuned: head only",
-          "finetuned": "Fine-tuned: most layers"}
+          "finetuned": "Fine-tuned: most layers",
+          "lidar": "LiDAR: CenterPoint (pretrained)",
+          "fused": "Late fusion: camera + LiDAR"}
+SHORT = {"pretrained": "Camera", "headonly": "Camera, head-only FT", "finetuned": "Camera, full FT",
+         "lidar": "LiDAR", "fused": "Camera+LiDAR fusion"}
+SENSOR = {"lidar": "lidar", "fused": "camera+lidar"}
 
 
 def r(v, nd=2):
@@ -82,6 +87,7 @@ def main(argv=None):
     ap.add_argument("--out", default="docs/demo_data.json")
     ap.add_argument("--min-score", type=float, default=0.15, help="Drop boxes below this score to keep the file small.")
     ap.add_argument("--note", default="", help="Shown on the page (e.g. to mark stand-in data).")
+    ap.add_argument("--bootstrap", default=None, help="results/bootstrap.json from src.eval.bootstrap (adds 95%% CIs)")
     args = ap.parse_args(argv)
 
     samples = load_gt(args.gt)
@@ -101,14 +107,23 @@ def main(argv=None):
         m = build_model(samples, load_predictions(path, samples), args.min_score)
         per_frame = m.pop("frames")
         m["label"] = LABELS.get(name, name)
+        m["sensor"] = SENSOR.get(name, "camera")
+        m["short"] = SHORT.get(name, name)
         m["frames"] = [per_frame[f["token"]] for f in frame_meta]
         models[name] = m
 
+    boot = None
+    if args.bootstrap:
+        with open(args.bootstrap) as f:
+            boot = json.load(f)
+        for name, m in models.items():
+            m["ci95"] = {s: v["ci95"] for s, v in boot["models"].get(name, {}).items()}
     for f in frame_meta:
         f.pop("token")
     out = {"classes": list(CLASSES), "gt_fields": GT_FIELDS, "pred_fields": PRED_FIELDS,
            "track_fields": TRACK_FIELDS, "distance_buckets": bucket_names(), "note": args.note,
-           "scenes": list(scenes.values()), "frames": frame_meta, "models": models}
+           "scenes": list(scenes.values()), "frames": frame_meta, "models": models,
+           "paired": boot["paired"] if boot else {}, "bootstrap_caveat": boot["caveat"] if boot else ""}
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     with open(args.out, "w") as f:
         json.dump(out, f, separators=(",", ":"))

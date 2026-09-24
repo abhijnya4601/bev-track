@@ -19,3 +19,4 @@ results/devkit/
 results/tracks.json
 *SYNTHETIC*
 dist/
+.cache/

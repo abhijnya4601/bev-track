@@ -19,7 +19,7 @@ if ! python -c "from PIL import Image; Image.LINEAR" 2>/dev/null; then
   python -m pip install -q "pillow==9.5.0"
 fi
 
-STEPS=" ${*:-0 1 2 3 4 5 6 7 8} "
+STEPS=" ${*:-0 1 2 3 4 5 6 7 8 9 10} "
 step() { echo; echo "=== $* ==="; }
 want() { [[ "$STEPS" == *" $1 "* ]]; }
 
@@ -103,5 +103,35 @@ if want 8; then
   step "8. Tracking"
   python -m src.track --gt data/processed/gt_clean.json --pred results/preds_finetuned.json \
       --out results/tracks.json --metrics-out results/tracking_metrics.csv
+fi
+if want 9; then
+  require_infos
+  step "9. LiDAR baseline: CenterPoint (pretrained, 10 classes mapped to 5) on the clean scenes"
+  # CenterPoint ships with mmdet3d 0.17.1 (already installed); only its config files are needed.
+  M3D="$REPO/.cache/mmdetection3d"
+  [ -d "$M3D/configs" ] || git clone -q --depth 1 --branch v0.17.1 https://github.com/open-mmlab/mmdetection3d.git "$M3D"
+  CP=ckpts/centerpoint_01voxel_second_secfpn_circlenms_4x8_cyclic_20e_nus.pth
+  mkdir -p ckpts
+  [ -f "$CP" ] || wget -q -O "$CP" https://download.openmmlab.com/mmdetection3d/v0.1.0_models/centerpoint/centerpoint_01voxel_second_secfpn_circlenms_4x8_cyclic_20e_nus/centerpoint_01voxel_second_secfpn_circlenms_4x8_cyclic_20e_nus_20201001_135205-5db91e00.pth
+  python -m src.model export --config "$M3D/configs/centerpoint/centerpoint_01voxel_second_secfpn_circlenms_4x8_cyclic_20e_nus.py" \
+      --checkpoint "$CP" --ann-file data/nuscenes/nuscenes_infos_temporal_clean_5cls.pkl --out results/preds_lidar.json
+  python -m src.eval.slice_eval --gt data/processed/gt_clean.json --pred results/preds_lidar.json --out results/lidar
+fi
+if want 10; then
+  step "10. Late fusion, tracking, bootstrap intervals, demo data (CPU)"
+  GT=data/processed/gt_clean.json
+  python -m src.fusion --gt $GT --camera results/preds_pretrained.json --lidar results/preds_lidar.json --out results/preds_fused.json
+  python -m src.eval.slice_eval --gt $GT --pred results/preds_fused.json --out results/fused
+  for m in lidar fused; do
+    echo "--- tracking on $m detections ---"
+    python -m src.track --gt $GT --pred results/preds_$m.json --out results/tracks_$m.json \
+        --metrics-out results/tracking_$m.csv | grep -E "MOTA|^ALL"
+  done
+  PREDS=""
+  for m in pretrained headonly finetuned lidar fused; do
+    [ -f results/preds_$m.json ] && PREDS="$PREDS --pred $m=results/preds_$m.json"
+  done
+  python -m src.eval.bootstrap --gt $GT $PREDS -n 1000 --out results/bootstrap.json
+  python scripts/build_demo.py --gt $GT $PREDS --bootstrap results/bootstrap.json --out results/demo_data.json
 fi
 echo; echo "Done. Tables in results/pretrained, results/finetuned; failure plots in results/failure_examples."
