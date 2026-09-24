@@ -33,8 +33,10 @@ run_step2() {
   ln -sfn "$REPO/data/can_bus" "$BF/data/can_bus"
   [ -d "$REPO/data/nuscenes/v1.0-mini" ] || { echo "ERROR: data/nuscenes/v1.0-mini missing (run the data cell)"; exit 1; }
   [ -d "$REPO/data/can_bus" ] || { echo "ERROR: data/can_bus missing (run the data cell; check can_bus.zip)"; exit 1; }
-  # BEVFormer's converters import `tools.data_converter...`, so its root must be on PYTHONPATH
-  # (its own dist_*.sh scripts do the same).
+  # BEVFormer's converters import `tools.data_converter...`. detectron2 0.6 installs its own top-level
+  # `tools` package into site-packages, and a regular package beats BEVFormer's __init__-less `tools/`
+  # (a namespace package) wherever it sits on sys.path. An empty __init__.py makes BEVFormer's win.
+  touch "$BF/tools/__init__.py"
   (cd "$BF" && PYTHONPATH="$BF:$PYTHONPATH" python tools/create_data.py nuscenes --root-path ./data/nuscenes --out-dir ./data/nuscenes \
       --extra-tag nuscenes --version v1.0-mini --canbus ./data)
   ls -la data/nuscenes/*.pkl

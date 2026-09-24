@@ -91,7 +91,13 @@ that is imported but never used for BEVFormer-tiny (DD3D) still has to import cl
 **Step 2 then failed with `No module named 'tools.data_converter'`.** BEVFormer's `create_data.py`
 imports `indoor_converter`, which imports `tools.data_converter.*` absolutely. That only resolves with
 the BEVFormer root on PYTHONPATH (its `dist_*.sh` wrappers set it; calling the script directly
-doesn't). → Set `PYTHONPATH=$BF` for create_data. Also made steps 5-7 build missing info files
+doesn't). → Set `PYTHONPATH=$BF` for create_data. **That was not enough; same error.** Real cause:
+the detectron2 0.6 wheel installs a top-level package named `tools` (its repo's `tools/` has an
+`__init__.py` and setup.py uses `find_packages()`). BEVFormer's `tools/` has no `__init__.py`, so it is a
+*namespace* package, and Python's path finder returns a regular package over a namespace portion
+regardless of sys.path order. So `tools` resolved to detectron2's. → `touch third_party/BEVFormer/tools/__init__.py`
+at runtime (keeps the pinned submodule untouched in git). Lesson: my first fix treated the symptom
+("not on the path") without checking *which* `tools` was being imported. Also made steps 5-7 build missing info files
 themselves, so an upstream failure shows its real error instead of a downstream FileNotFoundError.
 
 ## Next
