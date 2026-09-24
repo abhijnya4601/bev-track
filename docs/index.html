@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BEV-Track Demo</title>
+<meta name="description" content="Interactive bird's-eye-view demo of BEVFormer-tiny detections and AB3DMOT tracks on held-out nuScenes-mini scenes, with a slicing evaluation.">
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f6f6f3;
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --ink-3: #8a8983;
+  --line: #e2e1dc;
+  --grid: #ecebe6;
+  --m0: #2a78d6; --m1: #eb6834; --m2: #1baf7a;
+  --critical: #d03b3b;
+  --critical-fill: rgba(208, 59, 59, 0.14);
+  --gt: #3a3a37;
+  --gt-faint: rgba(58, 58, 55, 0.28);
+  --ring: #d9d8d2;
+  --accent-bg: #eef4fc;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #121211; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --ink-3: #8d8c85;
+    --line: #2d2d2b; --grid: #262624;
+    --m0: #3987e5; --m1: #d95926; --m2: #199e70;
+    --critical-fill: rgba(208, 59, 59, 0.22);
+    --gt: #e4e3dc; --gt-faint: rgba(228, 227, 220, 0.25); --ring: #34342f; --accent-bg: #1c2633;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121211; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --ink-3: #8d8c85;
+  --line: #2d2d2b; --grid: #262624;
+  --m0: #3987e5; --m1: #d95926; --m2: #199e70;
+  --critical-fill: rgba(208, 59, 59, 0.22);
+  --gt: #e4e3dc; --gt-faint: rgba(228, 227, 220, 0.25); --ring: #34342f; --accent-bg: #1c2633;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.55 ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+main { max-width: 1120px; margin: 0 auto; padding: 32px 16px 56px; }
+h1 { font-size: 30px; line-height: 1.2; margin: 0 0 6px; letter-spacing: -0.01em; }
+h2 { font-size: 19px; margin: 44px 0 6px; }
+h3 { font-size: 14px; margin: 0 0 8px; color: var(--ink-2); font-weight: 600; }
+p { margin: 0 0 10px; }
+a { color: var(--m0); }
+.lede { color: var(--ink-2); max-width: 760px; }
+.sub { color: var(--ink-2); font-size: 13px; }
+.banner { background: var(--critical-fill); border: 1px solid var(--critical); border-radius: 8px;
+  padding: 10px 14px; margin: 16px 0; font-weight: 600; }
+.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 22px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px;
+  cursor: pointer; text-align: left; font: inherit; color: inherit; }
+.card[aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: -1px; }
+.card .name { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); }
+.swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.card .big { font-size: 28px; font-weight: 650; font-variant-numeric: tabular-nums; margin-top: 4px; }
+.card .big small { font-size: 13px; font-weight: 500; color: var(--ink-2); margin-left: 6px; }
+.card .best { font-size: 12px; color: var(--ink-2); }
+.viewer { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; margin-top: 16px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+.bev-wrap { position: relative; }
+canvas#bev { width: 100%; aspect-ratio: 1 / 1; display: block; border-radius: 6px; }
+.controls label, .controls .lbl { display: block; font-size: 12px; font-weight: 600; color: var(--ink-2);
+  margin: 12px 0 5px; text-transform: uppercase; letter-spacing: 0.04em; }
+.controls label:first-child { margin-top: 0; }
+select, input[type=range] { width: 100%; }
+select { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--ink); }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg button { flex: 1; font: inherit; font-size: 13px; padding: 6px 4px; border: 0; background: transparent;
+  color: var(--ink-2); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.row { display: flex; align-items: center; gap: 8px; }
+.play { font: inherit; width: 38px; height: 30px; border-radius: 6px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--ink); cursor: pointer; flex: none; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; }
+.stat { background: var(--bg); border-radius: 6px; padding: 6px 8px; }
+.stat b { display: block; font-size: 18px; font-variant-numeric: tabular-nums; }
+.stat span { font-size: 11px; color: var(--ink-2); }
+.legend { list-style: none; padding: 0; margin: 0; font-size: 13px; }
+.legend li { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+.legend svg { flex: none; }
+.meta { font-size: 13px; color: var(--ink-2); }
+.hint { font-size: 12px; color: var(--ink-3); margin-top: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; }
+th, td { padding: 7px 10px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { font-size: 12px; color: var(--ink-2); font-weight: 600; }
+td.top { font-weight: 700; }
+.tablewrap { overflow-x: auto; }
+.charts { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; margin-top: 12px; }
+svg text { fill: var(--ink-2); font-size: 12px; }
+svg .val { fill: var(--ink); font-size: 11px; }
+.findings { max-width: 780px; }
+.findings li { margin-bottom: 8px; }
+footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-2); }
+.tooltip { position: fixed; pointer-events: none; background: var(--ink); color: var(--surface); font-size: 12px;
+  padding: 5px 8px; border-radius: 5px; opacity: 0; transition: opacity 0.08s; z-index: 10; }
+@media (max-width: 860px) {
+  .viewer, .charts { grid-template-columns: minmax(0, 1fr); }
+  .cards { grid-template-columns: minmax(0, 1fr); }
+}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>BEV-Track</h1>
+    <p class="lede">Camera-only 3D detection (BEVFormer-tiny) and tracking (AB3DMOT) on nuScenes-mini,
+      evaluated by class, distance and condition. Everything below is on <b>4 held-out scenes</b> the
+      pretrained model never trained on. Step through them to see where each model hits and misses.</p>
+    <p class="sub"><a href="https://github.com/abhijnya4601/bev-track">Code on GitHub</a> · 162 frames ·
+      <span id="ngt"></span> ground-truth objects after nuScenes devkit filtering</p>
+  </header>
+  <div id="note" class="banner" hidden></div>
+
+  <section class="cards" id="cards" aria-label="Models"></section>
+
+  <section class="viewer">
+    <div class="panel bev-wrap">
+      <canvas id="bev" role="img" aria-label="Bird's-eye view of the selected frame"></canvas>
+    </div>
+    <aside class="panel controls">
+      <label for="scene">Scene</label>
+      <select id="scene"></select>
+      <div class="meta" id="scenemeta"></div>
+
+      <span class="lbl">Frame</span>
+      <div class="row">
+        <button class="play" id="play" aria-label="Play">▶</button>
+        <input type="range" id="frame" min="0" value="0" aria-label="Frame">
+      </div>
+      <div class="meta" id="framelbl"></div>
+
+      <span class="lbl">Zoom</span>
+      <div class="seg" id="zoom">
+        <button data-z="25" aria-pressed="false">25 m</button>
+        <button data-z="42" aria-pressed="true">40 m</button>
+        <button data-z="55" aria-pressed="false">55 m</button>
+      </div>
+
+      <span class="lbl">View</span>
+      <div class="seg" id="view">
+        <button data-v="det" aria-pressed="true">Detections</button>
+        <button data-v="trk" aria-pressed="false">Tracks</button>
+      </div>
+
+      <label for="thr">Score threshold <span id="thrval"></span></label>
+      <input type="range" id="thr" min="0.15" max="0.9" step="0.05" value="0.3">
+
+      <div id="statswrap">
+        <span class="lbl">This frame (2 m matching)</span>
+        <div class="stats">
+          <div class="stat"><b id="s-tp">–</b><span>hits</span></div>
+          <div class="stat"><b id="s-fn">–</b><span>misses</span></div>
+          <div class="stat"><b id="s-fp">–</b><span>false pos.</span></div>
+        </div>
+      </div>
+
+      <span class="lbl">Legend</span>
+      <ul class="legend" id="legend"></ul>
+      <p class="hint">Top-down view, car at centre facing up. Rings at 20 m and 40 m.
+        Keys: ← → step, space plays.</p>
+    </aside>
+  </section>
+
+  <h2>Detection results</h2>
+  <p class="sub">nuScenes AP (mean over 0.5 / 1 / 2 / 4 m centre-distance thresholds). NDS assumes attribute
+    error = 1 since no attributes are predicted.</p>
+  <div class="charts">
+    <div class="panel"><h3>AP by class</h3><svg id="c-class" width="100%" height="260"></svg></div>
+    <div class="panel"><h3>mAP by distance from the car</h3><svg id="c-dist" width="100%" height="260"></svg></div>
+  </div>
+  <div class="panel tablewrap" style="margin-top:16px"><table id="t-class"></table></div>
+
+  <h2>Tracking results</h2>
+  <p class="sub">AB3DMOT on each model's detections (score ≥ 0.3), CLEAR-MOT with 2 m matching.</p>
+  <div class="panel tablewrap"><table id="t-track"></table></div>
+
+  <h2>What this shows</h2>
+  <ul class="findings" id="findings"></ul>
+
+  <footer>
+    Data: <a href="https://www.nuscenes.org/">nuScenes</a> (Motional), CC BY-NC-SA 4.0. Only box
+    coordinates derived from it are shown here. Model: <a href="https://github.com/fundamentalvision/BEVFormer">BEVFormer</a>-tiny,
+    public checkpoint. Split: the pretrained checkpoint was trained on nuScenes' official train split,
+    so evaluation uses only the mini scenes from the official val split (0103, 0553, 0796, 0916). All
+    four are daytime and dry, so lighting and weather could not be evaluated without leakage.
+  </footer>
+</main>
+<div class="tooltip" id="tip"></div>
+
+<script>
+(async function () {
+  const $ = (s) => document.querySelector(s);
+  let D;
+  try {
+    const res = await fetch('demo_data.json');
+    if (!res.ok) throw new Error(res.status);
+    D = await res.json();
+  } catch (e) {
+    $('#note').hidden = false;
+    $('#note').textContent = 'Demo data has not been published yet (docs/demo_data.json is built by scripts/build_demo.py).';
+    return;
+  }
+  const MODELS = Object.keys(D.models);
+  const CLS = D.classes;
+  const MATCH_DIST = 2.0;
+  let EXTENT = 42;
+  const st = { scene: 0, f: 0, model: MODELS[0], view: 'det', thr: 0.3, timer: null };
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const mcol = (m) => css('--m' + MODELS.indexOf(m));
+  const fmt = (v, d = 3) => (v === null || v === undefined || Number.isNaN(v)) ? '–' : v.toFixed(d);
+
+  if (D.note) { $('#note').hidden = false; $('#note').textContent = D.note; }
+  $('#ngt').textContent = D.models[MODELS[0]].tracking.ALL.GT.toLocaleString();
+
+  // ---------- model cards ----------
+  const best = MODELS.reduce((a, b) => (D.models[b].summary.mAP > D.models[a].summary.mAP ? b : a));
+  $('#cards').innerHTML = MODELS.map((m) => {
+    const s = D.models[m].summary;
+    return `<button class="card" data-m="${m}" aria-pressed="${m === st.model}">
+      <div class="name"><span class="swatch" style="background:var(--m${MODELS.indexOf(m)})"></span>${D.models[m].label}</div>
+      <div class="big">${fmt(s.mAP)}<small>mAP</small><small>NDS ${fmt(s.NDS)}</small></div>
+      <div class="best">${m === best ? 'Best mAP' : '&nbsp;'}</div></button>`;
+  }).join('');
+  document.querySelectorAll('.card').forEach((c) => c.onclick = () => { st.model = c.dataset.m; syncModel(); draw(); });
+  function syncModel() {
+    document.querySelectorAll('.card').forEach((c) => c.setAttribute('aria-pressed', c.dataset.m === st.model));
+  }
+
+  // ---------- controls ----------
+  $('#scene').innerHTML = D.scenes.map((s, i) => {
+    const c = s.condition || {};
+    return `<option value="${i}">${s.name} · ${(c.location || '').replace('singapore-', 'Singapore ').replace('boston-', 'Boston ')}</option>`;
+  }).join('');
+  $('#scene').onchange = (e) => { st.scene = +e.target.value; st.f = 0; setupScene(); draw(); };
+  $('#frame').oninput = (e) => { st.f = +e.target.value; draw(); };
+  $('#thr').oninput = (e) => { st.thr = +e.target.value; draw(); };
+  document.querySelectorAll('#view button').forEach((b) => b.onclick = () => {
+    st.view = b.dataset.v;
+    document.querySelectorAll('#view button').forEach((x) => x.setAttribute('aria-pressed', x === b));
+    draw();
+  });
+  document.querySelectorAll('#zoom button').forEach((b) => b.onclick = () => {
+    EXTENT = +b.dataset.z;
+    document.querySelectorAll('#zoom button').forEach((x) => x.setAttribute('aria-pressed', x === b));
+    draw();
+  });
+  $('#play').onclick = togglePlay;
+  function togglePlay() {
+    if (st.timer) { clearInterval(st.timer); st.timer = null; $('#play').textContent = '▶'; $('#play').ariaLabel = 'Play'; return; }
+    $('#play').textContent = '❚❚'; $('#play').ariaLabel = 'Pause';
+    st.timer = setInterval(() => { st.f = (st.f + 1) % D.scenes[st.scene].frames.length; draw(); }, 500);  // 2 Hz, like the data
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'SELECT') return;
+    const n = D.scenes[st.scene].frames.length;
+    if (e.key === 'ArrowRight') { st.f = Math.min(n - 1, st.f + 1); draw(); e.preventDefault(); }
+    if (e.key === 'ArrowLeft') { st.f = Math.max(0, st.f - 1); draw(); e.preventDefault(); }
+    if (e.key === ' ') { togglePlay(); e.preventDefault(); }
+  });
+  function setupScene() {
+    const s = D.scenes[st.scene], c = s.condition || {};
+    $('#frame').max = s.frames.length - 1;
+    $('#scenemeta').textContent = `${c.lighting || '?'}, ${c.weather || '?'} · ${s.frames.length} frames`;
+  }
+
+  // ---------- matching (devkit greedy, per frame) ----------
+  function matchFrame(gt, preds) {
+    const order = preds.map((p, i) => i).sort((a, b) => preds[b][6] - preds[a][6] || b - a);
+    const taken = new Set(), tp = new Set();
+    for (const pi of order) {
+      const p = preds[pi]; let best = -1, bd = Infinity;
+      gt.forEach((g, gi) => {
+        if (g[5] !== p[5] || taken.has(gi)) return;
+        const d = Math.hypot(g[0] - p[0], g[1] - p[1]);
+        if (d < bd) { bd = d; best = gi; }
+      });
+      if (bd < MATCH_DIST) { taken.add(best); tp.add(pi); }
+    }
+    return { gtHit: taken, predHit: tp };
+  }
+
+  // ---------- BEV drawing ----------
+  const cv = $('#bev'), ctx = cv.getContext('2d');
+  let S = 1, C = 0;
+  function toScreen(x, y) { return [C - y * S, C - x * S]; }  // ego x forward -> up, y left -> left
+  function boxPath(b) {
+    const [x, y, w, l, yaw] = b, c = Math.cos(yaw), s = Math.sin(yaw);
+    const pts = [[l / 2, w / 2], [-l / 2, w / 2], [-l / 2, -w / 2], [l / 2, -w / 2]]
+      .map(([a, bb]) => toScreen(x + a * c - bb * s, y + a * s + bb * c));
+    ctx.beginPath(); pts.forEach(([u, v], i) => (i ? ctx.lineTo(u, v) : ctx.moveTo(u, v))); ctx.closePath();
+    return pts;
+  }
+  function heading(b) {
+    const [x, y, , l, yaw] = b; const [u0, v0] = toScreen(x, y);
+    const [u1, v1] = toScreen(x + Math.cos(yaw) * l / 2, y + Math.sin(yaw) * l / 2);
+    ctx.beginPath(); ctx.moveTo(u0, v0); ctx.lineTo(u1, v1); ctx.stroke();
+  }
+  function draw() {
+    const dpr = window.devicePixelRatio || 1, W = cv.clientWidth;
+    if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(W * dpr); }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    C = W / 2; S = W / 2 / EXTENT;
+    ctx.fillStyle = css('--surface'); ctx.fillRect(0, 0, W, W);
+    // rings
+    ctx.strokeStyle = css('--ring'); ctx.lineWidth = 1; ctx.setLineDash([3, 4]);
+    [20, 40].forEach((r) => { ctx.beginPath(); ctx.arc(C, C, r * S, 0, 2 * Math.PI); ctx.stroke(); });
+    ctx.setLineDash([]); ctx.fillStyle = css('--ink-3'); ctx.font = '11px ui-sans-serif, system-ui';
+    ctx.fillText('20 m', C + 4, C - 20 * S - 4); ctx.fillText('40 m', C + 4, C - 40 * S - 4);
+    // ego
+    ctx.fillStyle = css('--ink'); ctx.beginPath();
+    ctx.moveTo(C, C - 9); ctx.lineTo(C - 6, C + 6); ctx.lineTo(C + 6, C + 6); ctx.closePath(); ctx.fill();
+
+    const scene = D.scenes[st.scene], fi = scene.frames[st.f], frame = D.frames[fi];
+    const mf = D.models[st.model].frames[fi];
+    $('#frame').value = st.f;
+    $('#framelbl').textContent = `frame ${st.f + 1} / ${scene.frames.length}  ·  t = ${((frame.t - D.frames[scene.frames[0]].t) / 1e6).toFixed(1)} s`;
+    $('#thrval').textContent = st.thr.toFixed(2);
+    const mc = mcol(st.model), crit = css('--critical');
+
+    if (st.view === 'det') {
+      const preds = mf.preds.filter((p) => p[6] >= st.thr);
+      const { gtHit, predHit } = matchFrame(frame.gt, preds);
+      frame.gt.forEach((g, i) => {
+        boxPath(g);
+        if (gtHit.has(i)) { ctx.strokeStyle = css('--gt'); ctx.lineWidth = 1.3; ctx.stroke(); }
+        else { ctx.fillStyle = css('--critical-fill'); ctx.fill(); ctx.strokeStyle = crit; ctx.lineWidth = 2.4; ctx.stroke(); }
+      });
+      preds.forEach((p, i) => {
+        const hit = predHit.has(i);
+        ctx.setLineDash(hit ? [5, 3] : [2, 3]); ctx.lineWidth = hit ? 1.6 : 1.6;
+        ctx.strokeStyle = hit ? mc : crit; boxPath(p); ctx.stroke(); ctx.setLineDash([]); heading(p);
+      });
+      $('#statswrap').style.visibility = 'visible';
+      $('#s-tp').textContent = predHit.size; $('#s-fn').textContent = frame.gt.length - gtHit.size;
+      $('#s-fp').textContent = preds.length - predHit.size;
+      legend([
+        ['solid', css('--gt'), 1.3, 'Ground truth, detected'],
+        ['solid', crit, 2.4, 'Ground truth, missed', true],
+        ['dash', mc, 1.6, 'Prediction, matched'],
+        ['dot', crit, 1.6, 'False positive'],
+      ]);
+    } else {
+      ctx.strokeStyle = css('--gt-faint'); ctx.lineWidth = 1;
+      frame.gt.forEach((g) => { boxPath(g); ctx.stroke(); });
+      const pal = [0, 1, 2].map((k) => css('--m' + k)).concat(['#eda100', '#e87ba4', '#008300', '#9b6bd6', '#6e7b8b']);
+      ctx.font = '10px ui-sans-serif, system-ui';
+      mf.tracks.forEach((t) => {
+        const col = pal[t[6] % pal.length]; ctx.strokeStyle = col; ctx.lineWidth = 2;
+        const pts = boxPath(t); ctx.stroke(); heading(t);
+        ctx.fillStyle = css('--ink-2'); ctx.fillText('#' + t[6], pts[0][0] + 3, pts[0][1] - 3);
+      });
+      $('#statswrap').style.visibility = 'hidden';
+      legend([
+        ['solid', css('--gt-faint'), 1.2, 'Ground truth'],
+        ['solid', pal[3], 2, 'Track (colour + #id per track)'],
+      ]);
+    }
+  }
+  function legend(items) {
+    $('#legend').innerHTML = items.map(([kind, col, w, text, fill]) => {
+      const dash = kind === 'dash' ? '5 3' : kind === 'dot' ? '2 3' : '';
+      return `<li><svg width="26" height="14"><rect x="2" y="2" width="22" height="10" rx="1"
+        fill="${fill ? css('--critical-fill') : 'none'}" stroke="${col}" stroke-width="${w}" stroke-dasharray="${dash}"/></svg>${text}</li>`;
+    }).join('');
+  }
+
+  // ---------- charts ----------
+  const tip = $('#tip');
+  function tipOn(el, text) {
+    el.addEventListener('mousemove', (e) => { tip.textContent = text; tip.style.opacity = 1;
+      tip.style.left = (e.clientX + 12) + 'px'; tip.style.top = (e.clientY - 28) + 'px'; });
+    el.addEventListener('mouseleave', () => { tip.style.opacity = 0; });
+  }
+  const NS = 'http://www.w3.org/2000/svg';
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag);
+    Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, v)); parent && parent.appendChild(e); return e; };
+
+  function axes(svg, W, H, m) {
+    [0, 0.25, 0.5, 0.75, 1].forEach((v) => {
+      const y = m.t + (1 - v) * (H - m.t - m.b);
+      el('line', { x1: m.l, x2: W - m.r, y1: y, y2: y, stroke: css('--grid') }, svg);
+      el('text', { x: m.l - 6, y: y + 4, 'text-anchor': 'end' }, svg).textContent = v.toFixed(2);
+    });
+  }
+  function classChart() {
+    const svg = $('#c-class'); svg.innerHTML = '';
+    const W = svg.clientWidth || 600, H = 260, m = { l: 36, r: 8, t: 10, b: 28 };
+    axes(svg, W, H, m);
+    const gw = (W - m.l - m.r) / CLS.length, bw = Math.min(22, (gw - 14) / MODELS.length);
+    CLS.forEach((c, ci) => {
+      const x0 = m.l + ci * gw + (gw - bw * MODELS.length - 2 * (MODELS.length - 1)) / 2;
+      MODELS.forEach((mo, mi) => {
+        const v = D.models[mo].per_class[c].AP; if (v === null) return;
+        const h = v * (H - m.t - m.b), x = x0 + mi * (bw + 2), y = H - m.b - h;
+        const r = Math.min(4, h / 2);
+        const path = `M${x},${H - m.b} V${y + r} Q${x},${y} ${x + r},${y} H${x + bw - r} Q${x + bw},${y} ${x + bw},${y + r} V${H - m.b} Z`;
+        const hit = el('rect', { x: x - 2, y: m.t, width: bw + 4, height: H - m.t - m.b, fill: 'transparent' }, svg);
+        el('path', { d: path, fill: css('--m' + mi) }, svg);
+        tipOn(hit, `${c} · ${D.models[mo].label}: AP ${fmt(v)} (n_gt ${D.models[mo].per_class[c].n_gt})`);
+      });
+      el('text', { x: m.l + ci * gw + gw / 2, y: H - 8, 'text-anchor': 'middle' }, svg).textContent = c;
+    });
+  }
+  function distChart() {
+    const svg = $('#c-dist'); svg.innerHTML = '';
+    const W = svg.clientWidth || 400, H = 260, m = { l: 36, r: 16, t: 10, b: 28 };
+    axes(svg, W, H, m);
+    const B = D.distance_buckets, xs = B.map((_, i) => m.l + 20 + i * ((W - m.l - m.r - 40) / (B.length - 1)));
+    B.forEach((b, i) => { el('text', { x: xs[i], y: H - 8, 'text-anchor': 'middle' }, svg).textContent = b; });
+    MODELS.forEach((mo, mi) => {
+      const ys = B.map((b) => m.t + (1 - (D.models[mo].distance_mAP[b] || 0)) * (H - m.t - m.b));
+      el('polyline', { points: xs.map((x, i) => `${x},${ys[i]}`).join(' '), fill: 'none', stroke: css('--m' + mi), 'stroke-width': 2 }, svg);
+      xs.forEach((x, i) => {
+        el('circle', { cx: x, cy: ys[i], r: 4.5, fill: css('--m' + mi), stroke: css('--surface'), 'stroke-width': 2 }, svg);
+        const hit = el('circle', { cx: x, cy: ys[i], r: 12, fill: 'transparent' }, svg);
+        tipOn(hit, `${D.models[mo].label} · ${B[i]}: mAP ${fmt(D.models[mo].distance_mAP[B[i]])}`);
+      });
+    });
+  }
+  function tables() {
+    const bestOf = (vals) => Math.max(...vals.filter((v) => v !== null));
+    let h = `<thead><tr><th>class</th><th>GT boxes</th>${MODELS.map((m) =>
+      `<th><span class="swatch" style="display:inline-block;background:var(--m${MODELS.indexOf(m)});margin-right:6px"></span>${D.models[m].label}</th>`).join('')}</tr></thead><tbody>`;
+    CLS.forEach((c) => {
+      const vals = MODELS.map((m) => D.models[m].per_class[c].AP), b = bestOf(vals);
+      h += `<tr><td>${c}</td><td>${D.models[MODELS[0]].per_class[c].n_gt}</td>${vals.map((v) => `<td class="${v === b ? 'top' : ''}">${fmt(v)}</td>`).join('')}</tr>`;
+    });
+    D.distance_buckets.forEach((bk) => {
+      const vals = MODELS.map((m) => D.models[m].distance_mAP[bk]), b = bestOf(vals);
+      h += `<tr><td>mAP, ${bk}</td><td></td>${vals.map((v) => `<td class="${v === b ? 'top' : ''}">${fmt(v)}</td>`).join('')}</tr>`;
+    });
+    const vals = MODELS.map((m) => D.models[m].summary.mAP), b = bestOf(vals);
+    h += `<tr><td><b>mAP, all</b></td><td></td>${vals.map((v) => `<td class="${v === b ? 'top' : ''}">${fmt(v)}</td>`).join('')}</tr></tbody>`;
+    $('#t-class').innerHTML = h;
+
+    let t = `<thead><tr><th>model</th><th>MOTA</th><th>MOTP (m)</th><th>ID switches</th><th>fragmentations</th>
+      <th>car MOTA</th><th>ped MOTA</th><th>barrier MOTA</th></tr></thead><tbody>`;
+    MODELS.forEach((m) => { const k = D.models[m].tracking;
+      t += `<tr><td>${D.models[m].label}</td><td>${fmt(k.ALL.MOTA)}</td><td>${fmt(k.ALL.MOTP, 2)}</td><td>${k.ALL.IDSW}</td>
+        <td>${k.ALL.FRAG}</td><td>${fmt(k.car.MOTA)}</td><td>${fmt(k.pedestrian.MOTA)}</td><td>${fmt(k.barrier.MOTA)}</td></tr>`; });
+    $('#t-track').innerHTML = t + '</tbody>';
+  }
+  function findings() {
+    const s = (m) => D.models[m].summary, lab = (m) => D.models[m].label;
+    const byMap = [...MODELS].sort((a, b) => s(b).mAP - s(a).mAP);
+    const top = byMap[0], B = D.distance_buckets, dm = D.models[top].distance_mAP, pd = D.models[top].per_distance;
+    // class with the largest relative AP drop from the nearest to the middle bucket (computed, not asserted)
+    const drops = CLS.filter((c) => pd[B[0]][c] && pd[B[1]][c] !== null)
+      .map((c) => [c, 1 - pd[B[1]][c] / pd[B[0]][c]]).sort((a, b) => b[1] - a[1]);
+    const trk = D.models[top].tracking;
+    const trkCls = CLS.filter((c) => trk[c] && trk[c].GT > 0 && trk[c].MOTA !== null)
+      .sort((a, b) => trk[b].MOTA - trk[a].MOTA);
+    const items = [
+      `<b>${lab(top)}</b> has the best mAP (${fmt(s(top).mAP)}), ahead of ${byMap.slice(1).map((m) => `${lab(m).toLowerCase()} (${fmt(s(m).mAP)})`).join(' and ')}.`
+        + (top === 'pretrained' ? ' The 5 classes are merges of nuScenes classes, so relabeling the pretrained outputs already solves the task. Fine-tuning on 6 scenes can only move the model toward those scenes.' : ''),
+      `Distance dominates: mAP falls from ${fmt(dm[B[0]])} within 20 m to ${fmt(dm[B[1]])} at 20–40 m and ${fmt(dm[B[2]])} beyond 40 m.`
+        + (drops.length ? ` <b>${drops[0][0]}</b> degrades fastest (AP ${fmt(pd[B[0]][drops[0][0]])} → ${fmt(pd[B[1]][drops[0][0]])}, −${Math.round(drops[0][1] * 100)}%).` : ''),
+      `Tracking on ${lab(top).toLowerCase()} detections: MOTA ${fmt(trk.ALL.MOTA)}, ${trk.ALL.IDSW} ID switches, ${trk.ALL.FRAG} fragmentations.`
+        + (trkCls.length > 1 ? ` Best-tracked class: ${trkCls[0]} (MOTA ${fmt(trk[trkCls[0]].MOTA)}); worst: ${trkCls[trkCls.length - 1]} (${fmt(trk[trkCls[trkCls.length - 1]].MOTA)}). Switch the viewer to <i>Tracks</i> to see identities change.` : ''),
+      `Drag the score slider: a higher threshold removes false positives (red dotted) but adds misses (red solid). The counts are recomputed live with the devkit's greedy 2 m matching.`,
+    ];
+    $('#findings').innerHTML = items.map((x) => `<li>${x}</li>`).join('');
+  }
+
+  setupScene(); syncModel(); draw(); classChart(); distChart(); tables(); findings();
+  let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { draw(); classChart(); distChart(); }, 120); });
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { draw(); classChart(); distChart(); });
+})();
+</script>
+</body>
+</html>
