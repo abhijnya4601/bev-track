@@ -4,10 +4,9 @@ Multi-camera BEV 3D detection (BEVFormer-tiny) and tracking (AB3DMOT) on nuScene
 evaluation harness that reports performance **by class, distance and scene condition** instead of
 one aggregate number.
 
-> **Status:** the eval harness, tracker, data prep, config and tests are built and verified
-> (53 tests, including cross-checks against the official nuScenes devkit and motmetrics).
-> Model training and inference haven't been run yet. The results sections below are empty until
-> they are. No numbers in this repo come from a real model.
+> **Status:** end-to-end pipeline has run on a free Colab T4 (2026-09-24). Detection results below are
+> real, on the 4 held-out scenes. With 162 samples and 4,667 GT objects, treat differences of a few
+> mAP points as noise.
 
 ## Problem
 
@@ -64,16 +63,41 @@ bucket and a FN in the other.
 
 ## Results
 
-_To be filled from `results/` after running `scripts/gpu_pipeline.sh`. Every table reports `n_gt`
-next to each number: with 4 eval scenes, many cells rest on a few dozen objects._
+All on the 4 `clean` scenes (162 samples, 4,667 GT boxes after devkit filtering). NDS uses mAAE = 1
+because no attributes are predicted, so it is lower than a devkit NDS would be.
 
-| | mAP | NDS | car | ped | cyclist | truck | barrier |
+| model | mAP | NDS | car | ped | cyclist | truck | barrier |
 |---|---|---|---|---|---|---|---|
-| Pretrained (10→5 class mapping) | | | | | | | |
-| Fine-tuned 5-class head | | | | | | | |
+| **Pretrained, 10 classes relabeled to 5 (no training)** | **0.452** | **0.436** | 0.453 | 0.441 | 0.223 | 0.352 | 0.793 |
+| Fine-tuned (neck/encoder 0.1×, transformer 0.5×, heads 1×; 12 ep) | 0.388 | 0.379 | 0.426 | 0.376 | 0.193 | 0.366 | 0.579 |
+| Fine-tuned, head only (4 ep) | _pending_ | | | | | | |
 
-By distance (`metrics_by_distance.csv`), by condition (`metrics_by_condition.csv`). Note that devkit
-class ranges exclude pedestrians and cyclists beyond 40 m and barriers beyond 30 m.
+**Fine-tuning hurt (−6.4 mAP).** The 5-class taxonomy is a pure merge of existing nuScenes classes,
+so relabeling the pretrained model's outputs already solves the task at zero cost. Tuning the
+transformer on 242 samples from 6 scenes can then only move the model toward those scenes, and
+barrier, whose test instances come from a single Boston scene unlike the training barriers, lost
+the most (0.79 → 0.58). The head-only run tests whether the damage comes from updating the shared
+representation.
+
+**By distance (pretrained):** mAP 0.591 (0–20 m) → 0.367 (20–40 m) → 0.044 (40 m+). Cyclists fall
+fastest: 0.41 → 0.07. The fine-tuned model shows the same shape, shifted down.
+
+**By condition:** the clean scenes are all day and dry, so lighting and weather can't be measured
+without leakage on mini (see split above). By location, compare on `mAP*` (classes present in both
+cities): per class, Boston and Singapore are within noise of each other (car 0.47 vs 0.45,
+ped 0.43 vs 0.47, truck 0.37 vs 0.36). The raw mAP gap (0.454 vs 0.385) is because Singapore has
+no barrier GT.
+
+**Failure cases (fine-tuned, 2 m matching):** of 3,503 FPs, 1,650 are hallucinations, 1,049
+mislocalized (a same-class GT within 2–4 m), 670 duplicates and 134 class confusions. Of 1,344 FNs,
+763 are mislocalized rather than missed outright. Most errors are localization, not detection:
+2,066 of the worst-matched boxes are dominated by translation error. Renders are in
+`results/failure_examples/`.
+
+**Tracking (fine-tuned detections, score ≥ 0.3):** MOTA 0.210, MOTP 0.86 m, 448 ID switches,
+327 fragmentations over 4,667 GT. Barrier (static) tracks well (MOTA 0.80). Cars and pedestrians
+have many ID switches in the two dense parking-lot scenes (0103, 0916), which account for 410 of
+the 448.
 
 ## BEV visualizations
 

@@ -71,7 +71,25 @@ def run(samples: Dict[str, Sample], preds_by_sample: Dict[str, List[Box]], use_c
         tokens = {b.sample_token for b, keep in zip(gt, gm) if keep} | {b.sample_token for b, keep in zip(preds, pm) if keep}
         res.extra["n_samples"] = len(tokens) if key[0] != "distance" else len(samples)
         results[key] = res
+    add_common_class_map(results)
     return results, gt, preds, matches
+
+
+def add_common_class_map(results) -> None:
+    """mAP over only the classes that have GT in *every* slice of the same axis, as ``extra['mAP_common']``.
+
+    Plain per-slice mAP averages over whichever classes appear in that slice, so a slice without an
+    easy class (e.g. a location with no barriers) looks worse for a reason unrelated to the model.
+    Compare slices within an axis on this column.
+    """
+    axes: Dict[str, list] = {}
+    for (axis, _), res in results.items():
+        axes.setdefault(axis, []).append(res)
+    for axis, group in axes.items():
+        common = [c for c in CLASSES if all(r.per_class[c].n_gt > 0 for r in group)]
+        for r in group:
+            r.extra["mAP_common"] = float(np.mean([r.per_class[c].ap for c in common])) if common else np.nan
+            r.extra["common_classes"] = common
 
 
 def _class_rows(axis: str, value: str, res: DetectionResult) -> List[dict]:
@@ -85,7 +103,9 @@ def _class_rows(axis: str, value: str, res: DetectionResult) -> List[dict]:
     total = {"slice_axis": axis, "slice": value, "class": "ALL",
              "n_gt": sum(r.n_gt for r in res.per_class.values()),
              "n_pred": sum(r.n_pred for r in res.per_class.values()),
-             "AP": res.mean_ap, "NDS": res.nds, "n_samples": res.extra.get("n_samples")}
+             "AP": res.mean_ap, "mAP_common": res.extra.get("mAP_common", np.nan),
+             "common_classes": "+".join(res.extra.get("common_classes", [])),
+             "NDS": res.nds, "n_samples": res.extra.get("n_samples")}
     total.update({TP_METRIC_SHORT[m][1:]: res.mean_tp_errors[m] for m in TP_METRICS})
     rows.append(total)
     return rows
@@ -112,18 +132,21 @@ def write_reports(results, out_dir: str) -> None:
     cond_rows = [r for rows in by_axis.values() for r in rows]
     if cond_rows:
         _write_csv(os.path.join(out_dir, "metrics_by_condition.csv"), cond_rows)
-    summary = {f"{a}={v}": {**res.summary_row(), "n_samples": res.extra.get("n_samples")}
+    summary = {f"{a}={v}": {**res.summary_row(), "mAP_common": res.extra.get("mAP_common"),
+                            "n_samples": res.extra.get("n_samples")}
                for (a, v), res in results.items()}
     with open(os.path.join(out_dir, "summary.json"), "w") as f:
         json.dump(summary, f, indent=2, default=lambda x: None if isinstance(x, float) and np.isnan(x) else x)
 
 
 def print_table(results) -> None:
-    print(f"{'slice':<28}{'n_gt':>7}{'mAP':>8}{'NDS':>8}  " + "  ".join(f"{c[:5]:>6}" for c in CLASSES))
+    print(f"{'slice':<32}{'n_gt':>7}{'mAP':>8}{'mAP*':>8}{'NDS':>8}  " + "  ".join(f"{c[:5]:>6}" for c in CLASSES))
     for (axis, value), res in results.items():
         n_gt = sum(r.n_gt for r in res.per_class.values())
         aps = "  ".join(f"{res.per_class[c].ap:6.3f}" for c in CLASSES)
-        print(f"{axis + '=' + value:<28}{n_gt:>7}{res.mean_ap:8.3f}{res.nds:8.3f}  {aps}")
+        print(f"{axis + '=' + value:<32}{n_gt:>7}{res.mean_ap:8.3f}{res.extra.get('mAP_common', np.nan):8.3f}"
+              f"{res.nds:8.3f}  {aps}")
+    print("mAP* = mean AP over classes present in every slice of that axis; compare slices on this column.")
 
 
 def main(argv=None):

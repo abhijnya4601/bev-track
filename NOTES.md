@@ -105,10 +105,28 @@ the pin), same `Image.LINEAR` crash in step 6. → `gpu_pipeline.sh` now checks 
 reinstalls pillow 9.5.0 itself. Fixing it in one place (the notebook) wasn't enough, because the env
 can be rebuilt from a different place.
 
+## 2026-09-24: first real results
+
+Baseline (pretrained, relabeled 10→5) mAP 0.452 / NDS 0.436. Fine-tuned 0.388 / 0.379. **Fine-tuning
+made it worse.** In hindsight: (1) the 5 classes are merges of existing ones, so relabeling at
+inference is already a complete solution, and training has nothing to add but plenty to break; (2) my
+config trained far more than "the head" (encoder 0.1×, rest of transformer 0.5×) on 242 samples,
+which is exactly the setup the spec warned against. → Added `configs/bevformer_tiny_nusc_headonly.py`
+(everything except cls/reg branches frozen, 4 epochs) as the fair version of the experiment.
+
+Also fixed a comparison bug I'd flagged: per-slice mAP averages over the classes present *in that
+slice*, so Singapore (no barriers) looked 7 points worse than Boston. Per class they are the same.
+Added `mAP*` = mean over classes present in every slice of an axis.
+
+Training time: 12 epochs × 242 iters at ~2 s/iter = 1 h 40 min on a free T4; ~0.7 s/iter was data
+loading (2 CPU cores decoding 18 JPEGs per step).
+
 ## Next
 - [x] Download v1.0-mini; run `data/prepare_nuscenes.py report` and `gt`
-- [ ] Get the CAN bus expansion (login) → Drive
-- [ ] Run notebooks/colab_gpu.ipynb on a free T4
+- [x] Get the CAN bus expansion (login) → Drive
+- [x] Run notebooks/colab_gpu.ipynb on a free T4
+- [ ] Head-only fine-tune ablation
+- [ ] Tracker on baseline detections; score-threshold sweep
 - [ ] GPU box: build docker image, run `scripts/gpu_pipeline.sh` step by step
 - [ ] Sanity: `run_official_devkit_eval` (10-class, mini_val) on the pretrained model should land near
       BEVFormer's full-val numbers (NDS 35.4 / mAP 25.2), allowing for 2-scene noise

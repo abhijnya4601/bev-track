@@ -164,6 +164,17 @@ def test_harness_detects_the_injected_degradation(synth):
     assert results[("lighting", "day")].mean_ap > results[("lighting", "night")].mean_ap
 
 
+def test_common_class_map_uses_only_shared_classes(synth):
+    _, results, *_ = synth
+    far = results[("distance", "40m+")]
+    common = far.extra["common_classes"]
+    # pedestrians/cyclists/barriers are range-filtered below 40 m, so 40m+ only has car and truck
+    assert common == ["car", "truck"]
+    for b in bucket_names():
+        r = results[("distance", b)]
+        assert r.extra["mAP_common"] == pytest.approx(np.mean([r.per_class[c].ap for c in common]))
+
+
 def test_slice_masks_cover_all_axes(synth):
     samples, _, gt, pr, _ = synth
     keys = slice_masks(gt, pr, samples).keys()
