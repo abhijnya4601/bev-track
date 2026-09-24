@@ -1,8 +1,9 @@
 # BEV-Track
 
-Multi-camera BEV 3D detection (BEVFormer-tiny) and tracking (AB3DMOT) on nuScenes-mini, with an
-evaluation harness that reports performance **by class, distance and scene condition** instead of
-one aggregate number.
+3D object detection from cameras (BEVFormer-tiny), from LiDAR (CenterPoint) and from a late fusion of
+both, plus tracking (AB3DMOT), on nuScenes-mini, with an evaluation harness that reports performance
+**by class, distance and scene condition** instead of one aggregate number, with bootstrap
+confidence intervals.
 
 > **[Interactive demo →](https://abhijnya4601.github.io/bev-track/)**: step through the held-out scenes in
 > bird's-eye view, compare the three models, and adjust the score threshold.
@@ -21,16 +22,16 @@ all of that. This project measures where it breaks.
 ## Approach
 
 ```
-6 camera images ──► BEVFormer-tiny ───────────► per-frame 3D boxes ──► AB3DMOT ──► tracks
- (+ CAN bus)        R50 backbone (frozen)          (ego frame)           Kalman + Hungarian,
-                    50×50 BEV grid, 3-frame                              run in the global frame
-                    temporal self-attention
-                    5-class head (fine-tuned)
-                                 │                                          │
-                                 ▼                                          ▼
-                     slicing eval harness                         CLEAR-MOT: MOTA, MOTP,
-                     mAP/NDS by class × distance × condition      ID switches, fragmentation
-                     failure-case extraction + BEV plots
+6 camera images + CAN bus ──► BEVFormer-tiny (R50, 50×50 BEV grid, 3-frame temporal) ──┐
+LiDAR sweep + 9 past sweeps ──► CenterPoint (voxel 0.1 m, circle NMS) ───────────────────┤
+                                                                                         ▼
+                        late fusion: pair boxes per class, keep LiDAR geometry, noisy-OR scores
+                                                                                         ▼
+                              per-frame 3D boxes (ego frame) ──► AB3DMOT (Kalman + Hungarian, global frame)
+                                         │                                   │
+                                         ▼                                   ▼
+                slicing eval: mAP/NDS by class × distance × condition   CLEAR-MOT: MOTA, MOTP,
+                + paired bootstrap CIs + failure-case BEV renders        ID switches, fragmentation
 ```
 
 **Classes:** car · pedestrian · cyclist (bicycle+motorcycle) · truck (truck+construction) · barrier.
@@ -66,24 +67,39 @@ bucket and a FN in the other.
 
 ## Results
 
-All on the 4 `clean` scenes (162 samples, 4,667 GT boxes after devkit filtering). NDS uses mAAE = 1
-because no attributes are predicted, so it is lower than a devkit NDS would be.
+All on the 4 `clean` scenes (162 samples, 4,667 GT boxes after devkit filtering). Both pretrained
+checkpoints were trained on nuScenes' official train split, which excludes these scenes. NDS uses
+mAAE = 1 because no attributes are predicted. The 95% CIs come from a paired frame-level bootstrap
+(1000 resamples). Frames within a scene are correlated, so **the intervals are optimistic**.
 
-| model | mAP | NDS | car | ped | cyclist | truck | barrier |
-|---|---|---|---|---|---|---|---|
-| **Pretrained, 10 classes relabeled to 5 (no training)** | **0.452** | **0.436** | 0.453 | 0.441 | 0.223 | 0.352 | 0.793 |
-| Fine-tuned (neck/encoder 0.1×, transformer 0.5×, heads 1×; 12 ep) | 0.388 | 0.379 | 0.426 | 0.376 | 0.193 | 0.366 | 0.579 |
-| Fine-tuned, head only (4 ep) | 0.432 | 0.413 | 0.447 | 0.440 | 0.228 | 0.311 | 0.737 |
+| model | mAP (95% CI) | NDS | mATE | car | ped | cyclist | truck | barrier |
+|---|---|---|---|---|---|---|---|---|
+| Camera: BEVFormer-tiny, 10→5 relabeled | 0.452 (0.435–0.470) | 0.436 | 0.71 m | 0.453 | 0.441 | 0.223 | 0.352 | 0.793 |
+| Camera: head-only fine-tune (4 ep) | 0.432 (0.415–0.449) | 0.413 | 0.76 m | 0.447 | 0.440 | 0.228 | 0.311 | 0.737 |
+| Camera: fine-tune most layers (12 ep) | 0.388 (0.373–0.403) | 0.379 | 0.81 m | 0.426 | 0.376 | 0.193 | 0.366 | 0.579 |
+| **LiDAR: CenterPoint, 10→5 relabeled** | 0.720 (0.695–0.745) | 0.663 | 0.30 m | **0.847** | **0.913** | 0.599 | 0.587 | 0.654 |
+| **Late fusion: camera + LiDAR** | **0.753** (0.731–0.774) | **0.681** | **0.27 m** | 0.832 | 0.850 | **0.630** | **0.648** | **0.804** |
 
-**Fine-tuning hurt (−6.4 mAP).** The 5-class taxonomy is a pure merge of existing nuScenes classes,
-so relabeling the pretrained model's outputs already solves the task at zero cost. Tuning the
-transformer on 242 samples from 6 scenes can then only move the model toward those scenes, and
-barrier, whose test instances come from a single Boston scene unlike the training barriers, lost
-the most (0.79 → 0.58). **Head-only fine-tuning recovers 4.4 of the 6.4 points**, so most of the damage
-came from updating the shared representation. Car, pedestrian and cyclist are unchanged vs the
-baseline (±0.01), but the head alone still loses 4–6 points on truck and barrier, the two classes
-whose training instances look least like the test ones. Conclusion: when a new taxonomy is a merge of
-existing classes, relabel the outputs; don't fine-tune on mini-scale data.
+**Camera vs LiDAR.** LiDAR is +0.268 mAP ahead (paired 95% CI +0.248 to +0.287), and its
+translation error is less than half (0.30 m vs 0.71 m): cameras have to infer depth, LiDAR measures it.
+The gap is largest where camera depth is worst. Beyond 40 m, LiDAR mAP is 0.257 vs the camera's 0.044.
+From 0–20 m to 20–40 m, camera mAP keeps 62% of its value and LiDAR keeps 70%.
+
+**Late fusion adds +0.033 mAP over LiDAR alone (CI +0.022 to +0.044), and all of the gain is at range.**
+0–20 m: +0.001 (CI −0.011 to +0.011, no effect). 20–40 m: +0.039 (CI +0.017 to +0.060). Per class,
+fusion helps where the camera is relatively strong or LiDAR is sparse: barrier 0.654 → 0.804, truck
+0.587 → 0.648, cyclist 0.599 → 0.630. It **hurts** car (0.847 → 0.832) and pedestrian (0.913 → 0.850),
+where LiDAR is already near its ceiling and unconfirmed camera boxes only add false positives. The fusion
+parameters were fixed a priori, not tuned on these scenes. A per-class camera weight is the obvious next step.
+
+**Camera fine-tuning hurt.** Head-only −0.020 (CI −0.026 to −0.014); most layers −0.064 (CI −0.072 to
+−0.056). The 5-class taxonomy is a pure merge of existing nuScenes classes, so relabeling the pretrained
+model's outputs already solves the task at zero cost. Tuning the transformer on 242 samples from 6
+scenes can only move the model toward those scenes. Barrier, whose test instances come from a single
+Boston scene unlike the training barriers, lost the most (0.79 → 0.58). Freezing everything but the
+head recovers 4.4 of the 6.4 points, so most of the damage came from updating the shared
+representation. Conclusion: when a new taxonomy is a merge of existing classes, relabel the outputs.
+Don't fine-tune on mini-scale data.
 
 **By distance (pretrained):** mAP 0.591 (0–20 m) → 0.367 (20–40 m) → 0.044 (40 m+). Cyclists fall
 fastest: 0.41 → 0.07. The fine-tuned model shows the same shape, shifted down.
@@ -102,18 +118,21 @@ mislocalized (a same-class GT within 2–4 m), 670 duplicates and 134 class conf
 
 **Tracking (AB3DMOT, score ≥ 0.3, 2 m CLEAR-MOT):**
 
-| detections from | MOTA | MOTP (m) | ID switches | fragmentations |
-|---|---|---|---|---|
-| Pretrained, relabeled | 0.195 | 0.83 | 536 | 293 |
-| Fine-tuned, head only | 0.183 | 0.85 | 543 | 295 |
-| Fine-tuned, most layers | 0.210 | 0.86 | 448 | 327 |
+| detections from | MOTA | ID switches |
+|---|---|---|
+| Camera, relabeled | 0.195 | 536 |
+| Camera, head-only FT | 0.183 | 543 |
+| Camera, full FT | 0.210 | 448 |
+| **LiDAR** | **0.567** | **244** |
+| Late fusion | 0.321 | 398 |
 
-Tracking ranks the models **opposite** to detection. The best detector gets the lowest MOTA because
-at a fixed 0.3 threshold it passes more boxes per frame to the tracker (35 vs 31), so more false
-positives reach it. MOTA at a single threshold rewards score calibration as much as detection
-quality, which is why nuScenes' official metric (AMOTA) averages over thresholds. Static barriers
-track well (MOTA 0.80–0.91). Cars and pedestrians switch IDs mostly in the two dense parking-lot
-scenes (0103, 0916).
+LiDAR tracks far better: MOTA 0.57 vs 0.20, with half the ID switches, because accurate positions keep
+the Kalman filter's associations stable. **Late fusion has higher mAP than LiDAR but much lower MOTA.**
+Noisy-OR raises scores, and down-weighted camera-only boxes still clear the tracker's 0.3 threshold,
+so more false positives reach the tracker. mAP integrates over all thresholds and doesn't see this.
+Tracking uses one. The camera models show the same effect (the best detector has the lowest MOTA).
+The lesson is that a detector's scores need calibrating for the operating threshold its consumer
+uses. That's why nuScenes' official tracking metric (AMOTA) averages over thresholds.
 
 ## BEV visualizations
 
@@ -174,5 +193,7 @@ NOTES.md                         build log: what broke and how it was fixed
 
 ## With more time
 
-Full nuScenes (and full-val numbers comparable to the paper), all 10 classes, AMOTA via the devkit's
-tracking eval, LiDAR fusion (e.g. BEVFusion), robustness to camera-extrinsic perturbation, and TensorRT export.
+Full nuScenes (and full-val numbers comparable to the papers), all 10 classes, per-class fusion
+weights tuned on held-out training scenes, score calibration before tracking, AMOTA via the devkit's
+tracking eval, a learned fusion model (e.g. BEVFusion), robustness to camera-extrinsic perturbation,
+and TensorRT export.

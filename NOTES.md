@@ -136,13 +136,20 @@ loading (2 CPU cores decoding 18 JPEGs per step).
   resampled frames for every model. Frame-level resampling ignores within-scene correlation, so the
   intervals are optimistic, and that caveat is printed with every result.
 
+**Results:** LiDAR 0.720 mAP vs camera 0.452. Fusion 0.753, with the gain entirely at 20–40 m. Fusion
+hurts car/ped (LiDAR at ceiling; camera-only boxes add FPs). CenterPoint ran first try in the
+BEVFormer env. Tracking: LiDAR MOTA 0.567 but fusion only 0.321. Same single-threshold calibration
+story as the camera models, now much larger.
+
 ## Next
 - [x] Download v1.0-mini; run `data/prepare_nuscenes.py report` and `gt`
 - [x] Get the CAN bus expansion (login) → Drive
 - [x] Run notebooks/colab_gpu.ipynb on a free T4
 - [x] Head-only fine-tune ablation: 0.432 mAP (recovers 4.4 of 6.4 points; still below relabeling)
 - [x] Interactive demo on GitHub Pages
-- [ ] Tracker score-threshold sweep / AMOTA: single-threshold MOTA ranked the models opposite to mAP
+- [x] LiDAR baseline, late fusion, bootstrap CIs
+- [ ] Score calibration / threshold sweep before tracking (fusion loses 0.25 MOTA vs LiDAR at 0.3)
+- [ ] Per-class fusion camera weight, tuned on `seen` scenes only
 - [ ] GPU box: build docker image, run `scripts/gpu_pipeline.sh` step by step
 - [ ] Sanity: `run_official_devkit_eval` (10-class, mini_val) on the pretrained model should land near
       BEVFormer's full-val numbers (NDS 35.4 / mAP 25.2), allowing for 2-scene noise
