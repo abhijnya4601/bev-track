@@ -6,7 +6,7 @@ both, plus tracking (AB3DMOT), on nuScenes-mini, with an evaluation harness that
 confidence intervals.
 
 > **[Interactive demo →](https://abhijnya4601.github.io/bev-track/)**: step through the held-out scenes in
-> bird's-eye view, compare the three models, and adjust the score threshold.
+> bird's-eye view, compare all five models (three camera, LiDAR, late fusion), and adjust the score threshold.
 >
 > **Status:** end-to-end pipeline has run on a free Colab T4 (2026-09-24). Detection results below are
 > real, on the 4 held-out scenes. With 162 samples and 4,667 GT objects, treat differences of a few
@@ -108,7 +108,8 @@ fastest: 0.41 → 0.07. The fine-tuned model shows the same shape, shifted down.
 without leakage on mini (see split above). By location, compare on `mAP*` (classes present in both
 cities): per class, Boston and Singapore are within noise of each other (car 0.47 vs 0.45,
 ped 0.43 vs 0.47, truck 0.37 vs 0.36). The raw mAP gap (0.454 vs 0.385) is because Singapore has
-no barrier GT.
+no barrier GT after filtering (its 4 raw barriers are all 33–54 m away, beyond the devkit's
+30 m barrier range).
 
 **Failure cases (fine-tuned, 2 m matching):** of 3,503 FPs, 1,650 are hallucinations, 1,049
 mislocalized (a same-class GT within 2–4 m), 670 duplicates and 134 class confusions. Of 1,344 FNs,
@@ -149,8 +150,8 @@ false positives (highest score) and localization errors, tags each one
 ## Tracking
 
 AB3DMOT with a 10-state constant-velocity Kalman filter, per-class Hungarian association on BEV
-centre distance (IoU is harsh at 2 Hz for small objects), initial velocity taken from BEVFormer's
-velocity head. MOTA/MOTP/IDSW/FRAG come from `src/eval/track_metrics.py`, which matches motmetrics
+centre distance (IoU is harsh at 2 Hz for small objects). A new track's initial velocity comes from
+the detector's own velocity estimate (BEVFormer's or CenterPoint's; fused boxes carry CenterPoint's). MOTA/MOTP/IDSW/FRAG come from `src/eval/track_metrics.py`, which matches motmetrics
 on randomized sequences.
 
 ## Running it
@@ -178,17 +179,28 @@ python -m venv .venv && .venv/bin/pip install -r requirements-eval.txt
 ## Repo layout
 
 ```
-configs/bevformer_tiny_nusc.py   5-class fine-tune config (inherits upstream bevformer_tiny.py)
-data/prepare_nuscenes.py         split report, GT files, 5-class BEVFormer info files
-src/model.py                     classifier remap, prediction export
-src/train.py                     fine-tune launcher (BEVFormer's own training loop)
-src/track.py                     AB3DMOT
-src/eval/metrics.py              AP / TP errors / NDS (devkit-equivalent, slice-aware)
-src/eval/slice_eval.py           class × distance × condition tables
-src/eval/failure_cases.py        worst-case extraction, diagnosis, BEV renders
-src/eval/track_metrics.py        CLEAR-MOT
-tests/                           tests of the eval code itself
-NOTES.md                         build log: what broke and how it was fixed
+configs/bevformer_tiny_nusc.py           5-class fine-tune config (inherits upstream bevformer_tiny.py)
+configs/bevformer_tiny_nusc_headonly.py  head-only ablation (everything but cls/reg branches frozen)
+data/prepare_nuscenes.py                 split report, GT files, 5-class BEVFormer info files
+src/classes.py                           5-class taxonomy and nuScenes label mappings
+src/boxes.py                             box type, frame transforms, BEV geometry
+src/dataio.py                            GT/prediction file I/O, devkit-equivalent filtering
+src/model.py                             classifier checkpoint remap, prediction export (BEVFormer + CenterPoint)
+src/train.py                             fine-tune launcher (BEVFormer's own training loop)
+src/fusion.py                            late fusion of camera + LiDAR boxes
+src/track.py                             AB3DMOT
+src/synthetic.py                         synthetic scenes/detector for tests and smoke runs
+src/eval/metrics.py                      AP / TP errors / NDS (devkit-equivalent, slice-aware)
+src/eval/slice_eval.py                   class × distance × condition tables
+src/eval/bootstrap.py                    paired bootstrap confidence intervals
+src/eval/failure_cases.py                worst-case extraction, diagnosis, BEV renders
+src/eval/track_metrics.py                CLEAR-MOT
+scripts/gpu_pipeline.sh                  GPU run, steps 0-10 (data prep → models → fusion → CIs → demo data)
+scripts/build_demo.py                    builds docs/demo_data.json for the demo page
+docs/                                    interactive demo (GitHub Pages)
+notebooks/colab_gpu.ipynb                free-GPU (Colab T4) runner
+tests/                                   tests of the eval code, tracker, fusion and bootstrap
+NOTES.md                                 build log: what broke, what I decided, and why
 ```
 
 ## With more time

@@ -19,8 +19,8 @@ Two deliberate deviations from vanilla AB3DMOT:
   * Center-distance gating per class is the default. nuScenes keyframes are 2 Hz, so a
     pedestrian box can fail to overlap its own previous box, and IoU association is harsh
     for small objects.
-  * New tracks can take their initial velocity from the detection, since BEVFormer predicts
-    velocity. Vanilla AB3DMOT starts at zero velocity with a huge variance.
+  * New tracks can take their initial velocity from the detection, since both BEVFormer and
+    CenterPoint predict velocity. Vanilla AB3DMOT starts at zero velocity with a huge variance.
 """
 import argparse
 import json

@@ -1,155 +1,148 @@
-# Build log: what broke and how it was fixed
+# Build log: what broke, what I decided, and why
 
-Running notes, newest at the bottom. Interview material lives here.
+Newest entries at the bottom.
 
-## 2026-09-22: scaffold, eval harness, tracker
+## Setup: two environments
 
-**Dev machine has no NVIDIA GPU (Apple M3 Pro).** BEVFormer needs mmcv-full 1.4.0 CUDA ops
-(deformable attention), so it cannot run here at all. Split the project into two environments:
-- `requirements-eval.txt`: CPU. Eval harness, tracker, tests and notebook run on the laptop.
-- `docker/Dockerfile`: CUDA 11.1 / torch 1.9.1 / mmcv-full 1.4.0 / mmdet 2.14.0 / mmdet3d 0.17.1,
-  pinned verbatim from BEVFormer's `docs/install.md`. CUDA 11.1 tops out at sm_86, so use a
-  T4/V100/A10/A100, not an L4/4090/H100.
+My laptop has no NVIDIA GPU (Apple M3 Pro), and BEVFormer depends on mmcv-full 1.4.0's CUDA
+kernels for deformable attention, so it can't run locally at all. I split the project:
+- **CPU environment** (`requirements-eval.txt`): evaluation harness, tracker, tests, notebooks.
+  Everything I want to iterate on quickly runs on the laptop.
+- **GPU environment**: CUDA 11.1 / torch 1.9.1 / mmcv-full 1.4.0 / mmdet 2.14.0 / mmdet3d 0.17.1,
+  pinned exactly as BEVFormer's `docs/install.md` specifies (`docker/Dockerfile`). CUDA 11.1 only goes
+  up to sm_86, so it needs a T4/V100/A10/A100, not an L4/4090/H100.
 
-**Pretrained checkpoints have already seen most of nuScenes-mini.** The public BEVFormer-tiny
-checkpoint was trained on the official train split. Checking `nuscenes.utils.splits`:
-6 of 8 mini_train scenes are official train, including all three night scenes (1077, 1094, 1100).
-Only 0103, 0553, 0796 and 0916 are official val. Evaluating the pretrained model on mini_train
-(or slicing by night on it) measures memorisation.
-→ Fix: `data/prepare_nuscenes.py` defines `seen` (fine-tune here) and `clean` (evaluate here).
-Both models are evaluated on the same 4 clean scenes. Open question until the data is downloaded:
-is any clean scene at night? If not, the lighting slice can't be measured without leakage, and the
-README must say so rather than report a contaminated number.
+## Data leakage: the pretrained model has seen most of nuScenes-mini
 
-**The devkit's `DetectionEval` can't do this project's eval.** It hard-codes the 10 detection
-classes and only evaluates a whole split.
-→ Reimplemented matching, AP and TP errors (`src/eval/metrics.py`) and cross-checked them against the
-devkit's own `accumulate`/`calc_ap`/`calc_tp` on random data (`tests/test_eval_pipeline.py`).
-- First cross-check failed on car @ 2 m (0.337 vs 0.322). Cause: score **ties**. The devkit breaks
-  ties by position in its flattened box list, and the test inserted samples in set order. The
-  metric code was right and the test was wrong, but it shows that AP can depend on tie-breaking
-  when scores are quantized.
+The public BEVFormer-tiny checkpoint was trained on nuScenes' official train split. Checking
+`nuscenes.utils.splits`, 6 of the 8 mini_train scenes are in it, including all three night scenes
+(1077, 1094, 1100). Only 0103, 0553, 0796 and 0916 come from the official val split. Evaluating on
+mini_train would measure memorisation.
 
-**Distance slicing creates fake errors if done naively.** Filtering GT and predictions into
-distance buckets independently turns a pred at 19.5 m matched to a GT at 20.5 m into a FP in one
-bucket and a FN in the other. → Match once globally; a matched prediction follows its GT's bucket.
-There's a test for exactly this case.
-
-**CLEAR-MOT ID switches disagreed with motmetrics (18 vs 14).** My version only re-used the
-*previous frame's* correspondences. motmetrics re-establishes each GT's *last-ever* correspondence,
-so after a one-frame miss my version could let a different hypothesis grab the object and count a
-switch. Then fragmentation was off by one (29 vs 28): when two GTs share a last hypothesis after a
-swap, the order of re-establishment matters, and motmetrics goes in frame order.
-→ Both fixed. Randomised cross-check test against motmetrics now passes.
-
-**Library breakage to remember:** motmetrics 1.4 breaks on string ids under pandas 3 → pin `pandas<3`.
-mmcv 1.7 (for parsing configs locally) needs `--no-build-isolation` and `setuptools<70`.
-
-**Config gotcha:** mmcv config inheritance merges dicts but *replaces* lists, and variables like
-`class_names` are already substituted into the base's dicts. Overriding `class_names` alone changes
-nothing. Every pipeline that mentions classes had to be restated. Verified by loading the merged
-config with `mmcv.Config`.
-
-**BEVFormer's dataset `evaluate()` can't handle custom class names** (read from the code, not yet run: it looks up nuScenes default
-attributes per class name). → Disabled in-training validation; export predictions with our own
-code (`src/model.py export`) and evaluate with our harness.
-
-**Changing `bev_h/bev_w` or `point_cloud_range` breaks the checkpoint.** `bev_embedding` is
-(bev_h·bev_w × 256), and reference points are normalised by pc_range. Kept upstream values.
-
-## 2026-09-22 (later): real data + free-GPU path
-
-**nuScenes-mini downloads without a login** (`https://www.nuscenes.org/data/v1.0-mini.tgz`); the
-CAN bus expansion does not (returns the login page).
-
-**Split report answered the open question: all 4 clean scenes are day + dry.** All night/rain scenes
-(1077, 1094, 1100) are in the official train split. On mini, a lighting/weather slice can only be
-measured on scenes the pretrained model has seen. The honest condition slice here is location
+So I defined two splits in `data/prepare_nuscenes.py`: `seen` (fine-tune only here) and `clean`
+(evaluate only here). Every model is evaluated on the same 4 clean scenes. Once the data was
+downloaded, the split report showed all 4 are daytime and dry. That means I **can't** measure
+lighting or weather without leakage on mini, so the condition slice I report is location
 (Boston 0103/0553 vs Singapore 0796/0916).
 
-**GT pipeline cross-checked against the devkit on real data:** for mini_val, `build_gt` +
-`filter_boxes` keep exactly the boxes the devkit's `load_gt` → `add_center_dist` →
-`filter_eval_boxes` keeps (car 1913, ped 1067, cyclist 250, truck 95; no barriers in mini_val).
+## Why I wrote my own metric code, and how I made sure it's right
 
-**Free GPU = Colab T4, but Colab is Python 3.12 / CUDA 12.** Plan in `notebooks/colab_gpu.ipynb`
-(not yet run, since the first run needs your Google session; expect to debug here first):
-- micromamba env with Python 3.8 + torch 1.9.1+cu111 (bundles its CUDA runtime, runs on newer drivers)
-- mmdet3d 0.17.1 ops compiled with conda nvcc **11.8**. torch 1.9 only rejects a CUDA *major* mismatch.
-  gcc-9 from apt, because gcc 11 is too new for torch 1.9 headers. The wheel is cached in Drive.
-- `yapf==0.40.1` pinned (newer yapf breaks mmcv 1.4 `Config.pretty_text`), `numpy==1.19.5`
-  enforced with a pip constraints file on every install.
-- All wheel URLs were verified to exist for cp38 before writing the notebook.
+The devkit's `DetectionEval` hard-codes its 10 classes and can only score a whole split. I needed 5
+merged classes and per-slice scores, so I reimplemented matching, AP and the TP errors in
+`src/eval/metrics.py`. A reimplementation is only worth anything if it's verified, so:
+- Tests compare my AP and TP errors against the devkit's own `accumulate`/`calc_ap`/`calc_tp` on
+  random data (agreement to 1e-9), plus hand-calculated cases.
+- The first cross-check failed (0.337 vs 0.322). The cause turned out to be score **ties**: the devkit
+  breaks ties by position in its box list, and my test inserted samples in a different order. The
+  metric was right and the test was wrong, but it showed me AP depends on tie-breaking when scores are
+  quantized.
+- On real data, my GT loading and filtering keep exactly the boxes the devkit keeps (mini_val: car
+  1913, ped 1067, cyclist 250, truck 95).
 
-## 2026-09-24: first Colab run
+**Distance slicing.** If you filter GT and predictions into distance buckets independently, a
+prediction at 19.5 m matched to an object at 20.5 m becomes a false positive in one bucket and a miss
+in the other. I match once over all the data and let a matched prediction follow its object's bucket.
+There's a test for that exact case.
 
-Environment build and steps 0-4 worked on the first try (mmdet3d wheel compiled and cached in Drive).
-**Step 5 died importing BEVFormer's plugin:** `projects.mmdet3d_plugin` → dd3d → detectron2 0.6 →
-`detectron2.data.transforms` uses `PIL.Image.LINEAR`, **removed in Pillow 10**. Pillow wasn't pinned,
-so pip picked 10.x. → Pinned `pillow==9.5.0` (notebook constraints + Dockerfile). A dependency
-that is imported but never used for BEVFormer-tiny (DD3D) still has to import cleanly.
+## Tracking metrics disagreed with motmetrics, twice
 
-**Step 2 then failed with `No module named 'tools.data_converter'`.** BEVFormer's `create_data.py`
-imports `indoor_converter`, which imports `tools.data_converter.*` absolutely. That only resolves with
-the BEVFormer root on PYTHONPATH (its `dist_*.sh` wrappers set it; calling the script directly
-doesn't). → Set `PYTHONPATH=$BF` for create_data. **That was not enough; same error.** Real cause:
-the detectron2 0.6 wheel installs a top-level package named `tools` (its repo's `tools/` has an
-`__init__.py` and setup.py uses `find_packages()`). BEVFormer's `tools/` has no `__init__.py`, so it is a
-*namespace* package, and Python's path finder returns a regular package over a namespace portion
-regardless of sys.path order. So `tools` resolved to detectron2's. → `touch third_party/BEVFormer/tools/__init__.py`
-at runtime (keeps the pinned submodule untouched in git). Lesson: my first fix treated the symptom
-("not on the path") without checking *which* `tools` was being imported. Also made steps 5-7 build missing info files
-themselves, so an upstream failure shows its real error instead of a downstream FileNotFoundError.
+I implemented CLEAR-MOT myself so every counting rule is visible, and cross-checked it against
+motmetrics on random sequences. ID switches disagreed (18 vs 14): I only carried over the previous
+frame's matches, but motmetrics re-establishes each object's *last-ever* match, so after a one-frame
+miss my version could hand the object to a different track and count a false switch. After fixing
+that, fragmentations were off by one (29 vs 28), because the order in which two objects reclaim a
+shared track matters, and motmetrics goes in frame order. Both are fixed and the cross-check passes.
 
-**Pillow came back at 10.x before training** (Colab session restart + an older notebook copy without
-the pin), same `Image.LINEAR` crash in step 6. → `gpu_pipeline.sh` now checks for `Image.LINEAR` and
-reinstalls pillow 9.5.0 itself. Fixing it in one place (the notebook) wasn't enough, because the env
-can be rebuilt from a different place.
+## Config and framework gotchas
 
-## 2026-09-24: first real results
+- mmcv config inheritance merges dicts but **replaces** lists, and variables like `class_names` are
+  already baked into the parent's dicts. Overriding `class_names` alone changes nothing, so I restated
+  every pipeline that mentions classes and checked the merged config with `mmcv.Config`.
+- BEVFormer's dataset `evaluate()` looks up nuScenes default attributes by class name, so it can't
+  handle my class names. I disabled in-training validation and evaluate with my own exporter + harness.
+- Changing `bev_h/bev_w` or `point_cloud_range` would break the checkpoint: `bev_embedding` has
+  bev_h·bev_w rows, and reference points are normalised by pc_range. I kept the upstream values.
+- Library breakage: motmetrics 1.4 fails on string IDs under pandas 3, so I pinned `pandas<3`.
 
-Baseline (pretrained, relabeled 10→5) mAP 0.452 / NDS 0.436. Fine-tuned 0.388 / 0.379. **Fine-tuning
-made it worse.** In hindsight: (1) the 5 classes are merges of existing ones, so relabeling at
-inference is already a complete solution, and training has nothing to add but plenty to break; (2) my
-config trained far more than "the head" (encoder 0.1×, rest of transformer 0.5×) on 242 samples,
-which is exactly the setup the spec warned against. → Added `configs/bevformer_tiny_nusc_headonly.py`
-(everything except cls/reg branches frozen, 4 epochs) as the fair version of the experiment.
+## Getting it to run on a free GPU (Colab T4)
 
-Also fixed a comparison bug I'd flagged: per-slice mAP averages over the classes present *in that
-slice*, so Singapore (no barriers) looked 7 points worse than Boston. Per class they are the same.
-Added `mAP*` = mean over classes present in every slice of an axis.
+nuScenes-mini downloads without a login, but the CAN bus expansion needs one. Colab ships Python 3.12
+and CUDA 12, far newer than BEVFormer supports, so the notebook builds a Python 3.8 environment
+with micromamba:
+- torch 1.9.1+cu111 bundles its own CUDA runtime and runs on Colab's newer driver.
+- mmdet3d's CUDA ops are compiled with nvcc 11.8. torch 1.9 only rejects a *major* CUDA version
+  mismatch, and gcc-9 is used because gcc 11 is too new for torch 1.9's headers. The compiled wheel
+  is cached in Drive, so later sessions skip the ~20-minute build.
+- `yapf==0.40.1` pinned (newer yapf breaks mmcv 1.4's config printing), and `numpy==1.19.5` enforced
+  with a constraints file on every install.
 
-Training time: 12 epochs × 242 iters at ~2 s/iter = 1 h 40 min on a free T4; ~0.7 s/iter was data
-loading (2 CPU cores decoding 18 JPEGs per step).
+Three failures on the first run, each teaching something:
+1. **Pillow 10 removed `Image.LINEAR`**, which detectron2 0.6 uses at import time. BEVFormer's plugin
+   imports detectron2 (for DD3D, which BEVFormer-tiny never uses), so a dependency I don't need still
+   has to import cleanly. I pinned `pillow==9.5.0`. It came back after a session restart, so the
+   pipeline script now checks for it and repairs it itself. Fixing it in one place wasn't enough.
+2. **`No module named 'tools.data_converter'`.** My first fix, putting BEVFormer's root on
+   PYTHONPATH, changed nothing. The real cause: detectron2 installs its own top-level `tools`
+   package, and BEVFormer's `tools/` has no `__init__.py`. Python picks a regular package over an
+   `__init__`-less (namespace) one no matter the path order. An empty `__init__.py` fixed it. Lesson: I
+   treated the symptom without first checking *which* `tools` was being imported.
+3. After that, steps 5–7 build any missing inputs themselves, so an upstream failure shows its real
+   error instead of a confusing "file not found" later.
 
-## 2026-09-24: LiDAR, late fusion, confidence intervals
+## Result 1: fine-tuning the camera model made it worse
 
-- **LiDAR baseline = CenterPoint** from the mmdet3d **0.17.1** model zoo (56.2 mAP / 64.4 NDS on full val).
-  Chosen because it runs on the exact mmdet3d build already compiled and cached for BEVFormer: no new
-  environment. Also trained on the official train split, so the `clean` scenes stay held out.
-  The BEVFormer info files already carry `lidar_path` + 10 `sweeps`, so no new data prep.
-- **Late fusion** (`src/fusion.py`): pair LiDAR and camera boxes per class within a radius, keep LiDAR
-  geometry, noisy-OR the scores, down-weight unconfirmed camera boxes. Parameters fixed a priori.
-  Tuning them on the 4 eval scenes would leak. Called "late fusion" everywhere, never "sensor fusion
-  model".
-- **Bootstrap CIs** (`src/eval/bootstrap.py`): matching is per-frame independent, so it runs once and
-  each resample is a reweighting. 1000 resamples × 5 models takes ~10 s. Paired differences use the same
-  resampled frames for every model. Frame-level resampling ignores within-scene correlation, so the
-  intervals are optimistic, and that caveat is printed with every result.
+Relabeling the pretrained 10-class outputs to my 5 classes: mAP 0.452. Fine-tuning most layers:
+0.388. My reasoning afterwards:
+1. My 5 classes are merges of existing nuScenes classes, so relabeling at inference already solves
+   the task completely. Training had nothing to add and plenty to break.
+2. My first config updated far more than the classification head (encoder at 0.1×, the rest of the
+   transformer at 0.5×) using only 242 training frames. That's a lot of capacity to pull toward 6 scenes.
 
-**Results:** LiDAR 0.720 mAP vs camera 0.452. Fusion 0.753, with the gain entirely at 20–40 m. Fusion
-hurts car/ped (LiDAR at ceiling; camera-only boxes add FPs). CenterPoint ran first try in the
-BEVFormer env. Tracking: LiDAR MOTA 0.567 but fusion only 0.321. Same single-threshold calibration
-story as the camera models, now much larger.
+To separate the two, I ran a head-only fine-tune (everything frozen except the class/box branches):
+0.432. That recovers 4.4 of the 6.4 points, so most of the damage came from updating the shared
+layers. It's still below plain relabeling, and the bootstrap interval (−0.026 to −0.014) says that
+gap is real, not noise.
+
+I also caught a comparison bug in my own tables: per-slice mAP averaged over whichever classes had
+ground truth in that slice. Singapore's 4 barriers are all beyond the 30 m barrier range, so the
+filter removes them, and Singapore looked 7 points worse than Boston for that reason alone. Per class,
+the two cities are the same. I added `mAP*`, the mean over classes present in every slice of an axis.
+
+Training cost: 12 epochs × 242 steps at ~2 s/step ≈ 1 h 40 min on a free T4, with ~0.7 s of each step
+spent waiting on image decoding (2 CPU cores, 18 JPEGs per step).
+
+## Result 2: LiDAR, late fusion, and confidence intervals
+
+- **LiDAR baseline: CenterPoint** from the mmdet3d 0.17.1 model zoo (56.2 mAP / 64.4 NDS on full val).
+  I chose it because it runs on the exact mmdet3d build I'd already compiled, so there was no new
+  environment. It was trained on the same official train split, so my clean scenes stay held out, and
+  the info files already had LiDAR paths and sweeps. It ran on the first try.
+- **Late fusion** (`src/fusion.py`): pair LiDAR and camera boxes per class within a radius, keep the
+  LiDAR geometry, combine scores by noisy-OR, down-weight camera boxes LiDAR didn't confirm. I fixed
+  the parameters in advance, because tuning them on the 4 evaluation scenes would leak test information
+  into the method. I call it *late* fusion because it combines two models' finished outputs. It is not
+  a network that learns from both sensors.
+- **Bootstrap confidence intervals** (`src/eval/bootstrap.py`): matching is independent per frame, so I
+  run it once and each resample just reweights frames. 1000 resamples × 5 models takes ~10 s. Every
+  model sees the same resampled frames, so differences are paired. Frames within a scene are
+  correlated, so these intervals are optimistic, and I print that caveat with every result.
+
+Results: LiDAR 0.720 mAP vs camera 0.452. Fusion 0.753, with the whole gain at 20–40 m. Fusion *hurts*
+car and pedestrian, where LiDAR is already near its ceiling and unconfirmed camera boxes only add
+false positives. Tracking: LiDAR MOTA 0.567, fusion only 0.321. It's the same calibration problem I'd
+seen with the camera models, now much larger: mAP integrates over all score thresholds, while the
+tracker runs at one.
+
+## A test file that CI never had
+
+`src/synthetic.py` (synthetic scenes for tests) was never committed, so CI failed on every push while
+all my tests passed locally. The cause was a `*SYNTHETIC*` ignore pattern I'd added for one notebook
+output file. macOS git matches ignore patterns case-insensitively, so it also matched
+`src/synthetic.py`. I force-added the file and scoped the pattern to `results/`. Lesson: a green local
+test run proves nothing about a fresh clone. Check CI after pushing, and use narrow ignore patterns.
 
 ## Next
-- [x] Download v1.0-mini; run `data/prepare_nuscenes.py report` and `gt`
-- [x] Get the CAN bus expansion (login) → Drive
-- [x] Run notebooks/colab_gpu.ipynb on a free T4
-- [x] Head-only fine-tune ablation: 0.432 mAP (recovers 4.4 of 6.4 points; still below relabeling)
-- [x] Interactive demo on GitHub Pages
-- [x] LiDAR baseline, late fusion, bootstrap CIs
-- [ ] Score calibration / threshold sweep before tracking (fusion loses 0.25 MOTA vs LiDAR at 0.3)
-- [ ] Per-class fusion camera weight, tuned on `seen` scenes only
-- [ ] GPU box: build docker image, run `scripts/gpu_pipeline.sh` step by step
-- [ ] Sanity: `run_official_devkit_eval` (10-class, mini_val) on the pretrained model should land near
-      BEVFormer's full-val numbers (NDS 35.4 / mAP 25.2), allowing for 2-scene noise
+- [ ] Score calibration or a threshold sweep before tracking (fusion loses 0.25 MOTA vs LiDAR at 0.3)
+- [ ] Per-class fusion camera weight, tuned on the `seen` scenes only
+- [ ] Sanity: the devkit's official 10-class eval of the pretrained BEVFormer on mini_val should land
+      near BEVFormer's published full-val numbers (NDS 35.4 / mAP 25.2), allowing for 2-scene noise

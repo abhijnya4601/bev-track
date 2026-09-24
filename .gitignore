@@ -17,6 +17,7 @@ work_dirs/
 # results: keep the curated CSVs/images committed, ignore scratch runs
 results/devkit/
 results/tracks.json
-*SYNTHETIC*
+# notebook outputs from synthetic stand-in data (scoped: macOS git ignore-matching is case-insensitive)
+results/*SYNTHETIC*
 dist/
 .cache/

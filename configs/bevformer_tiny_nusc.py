@@ -8,7 +8,7 @@
 # Things that deliberately stay at their upstream values, and why:
 #   * bev_h_/bev_w_ = 50: the pretrained `bev_embedding` (bev_h*bev_w x 256) and the learned
 #     positional encoding (row/col_num_embed) have this shape baked in. Changing the grid means
-#     re-learning those from scratch, which a 323-sample training set cannot support.
+#     re-learning those from scratch, which the 242-sample `seen` training split cannot support.
 #   * point_cloud_range = [-51.2, -51.2, -5, 51.2, 51.2, 3]: the encoder's 3D reference points and
 #     the box regression normalisation are defined relative to it, so the checkpoint only makes
 #     sense with this exact range.
@@ -116,8 +116,8 @@ runner = dict(type='EpochBasedRunner', max_epochs=total_epochs)
 checkpoint_config = dict(interval=2, max_keep_ckpts=3)
 log_config = dict(interval=20, hooks=[dict(type='TextLoggerHook'), dict(type='TensorboardLoggerHook')])
 
-# The dataset's built-in evaluate() hard-codes the 10 nuScenes classes (it crashes on "cyclist"),
-# so in-training validation is disabled (src.train passes --no-validate). Evaluate with
+# The dataset's built-in evaluate() looks up nuScenes default attributes by class name, so it cannot
+# handle our class names; in-training validation is disabled (src.train passes --no-validate). Evaluate with
 # `python -m src.model export` + `python -m src.eval.slice_eval` instead.
 evaluation = dict(interval=10 ** 9, pipeline=test_pipeline)
 

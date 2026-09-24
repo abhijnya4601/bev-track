@@ -2,8 +2,8 @@
 #
 # The first fine-tune (neck/encoder at 0.1x, transformer at 0.5x, 12 epochs) scored BELOW the unmodified
 # pretrained model with its classes remapped (mAP 0.388 vs 0.452 on the clean scenes). This config tests
-# the narrower hypothesis from the project spec: adapt only the final layers, keep every learned
-# representation (backbone, neck, BEV encoder, decoder, queries) exactly as pretrained.
+# whether that damage came from updating the shared layers: adapt only the final layers and keep every
+# learned representation (backbone, neck, BEV encoder, decoder, queries) exactly as pretrained.
 _base_ = ['./bevformer_tiny_nusc.py']
 
 frozen = dict(lr_mult=0.0, decay_mult=0.0)  # decay_mult too: AdamW's decoupled weight decay would still shrink them
