@@ -161,6 +161,11 @@ and those extras became false positives tied at score 1.0. After mirroring the f
 present in mini_val scores 1.000. Pipeline step 11 then compares my export of the pretrained BEVFormer
 against BEVFormer's own `tools/test.py --eval bbox` on the same checkpoint and split.
 
+**Result: exact agreement.** My export → devkit: mAP 0.2647, NDS 0.3252. BEVFormer's own evaluation:
+mAP 0.2647, NDS 0.3252, and all five TP errors equal to three decimals. Two independent export paths,
+one scorer, the same numbers. That closes the only gap in my validation (my conventions, not just my
+formulas). 26.5 mAP on mini_val also sits next to BEVFormer-tiny's published 25.2 on full val.
+
 **Wording.** The 40 m+ bucket only holds cars and trucks (the devkit caps pedestrians, cyclists and
 barriers at ≤ 40 m), so "LiDAR 0.257 vs camera 0.044 beyond 40 m" now says that. I also moved failure
 analysis from the weakest model to the camera baseline and the fused model.
@@ -168,5 +173,5 @@ analysis from the weakest model to the camera baseline and the fused model.
 ## Next
 - [ ] Score calibration or a threshold sweep before tracking (fusion loses 0.25 MOTA vs LiDAR at 0.3)
 - [ ] Per-class fusion camera weight, tuned on the `seen` scenes only
-- [ ] Run pipeline step 11 and record: my export vs BEVFormer's own eval on mini_val (should agree)
+- [x] Pipeline step 11: my export vs BEVFormer's own eval on mini_val. Exact match (0.2647 / 0.3252)
 - [ ] Per-class fusion weighting learned on `seen` scenes (needs camera + LiDAR predictions there)

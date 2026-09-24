@@ -59,6 +59,14 @@ tested, and it works as soon as the eval set has night or rain scenes (e.g. the 
 bicycle+motorcycle → cyclist and so on) rather than re-initialised, and the backbone is frozen.
 Layer-wise learning rates are set in `configs/bevformer_tiny_nusc.py`.
 
+**End-to-end validation against the official scorer.** The pretrained BEVFormer-tiny, exported
+through this repo (LiDAR → ego → global conversion, rotations, velocities, attributes) and scored by the
+untouched nuScenes devkit, matches BEVFormer's own `tools/test.py --eval bbox` on the same checkpoint
+and split **exactly**: mAP 0.2647 / NDS 0.3252 both ways, all five TP errors equal to 3 decimals
+(`scripts/devkit_check.py`, pipeline step 11). That's 26.5 mAP on mini_val, close to BEVFormer-tiny's
+published 25.2 on the full val split. A self-test that feeds ground truth through the same conversion
+scores AP 1.000 on every class present.
+
 **Why a custom metric implementation.** The devkit's `DetectionEval` hard-codes its 10 classes and
 can't slice. `src/eval/metrics.py` reimplements its matching, AP and TP errors. The tests check it
 against the devkit's own functions to 1e-9. Slices share one global matching, so a prediction at
@@ -118,9 +126,17 @@ ped 0.43 vs 0.47, truck 0.37 vs 0.36). The raw mAP gap (0.454 vs 0.385) is becau
 no barrier GT after filtering (its 4 raw barriers are all 33–54 m away, beyond the devkit's
 30 m barrier range).
 
-**Failure cases:** `results/failure_examples/{pretrained,fused}/`. The worst misses, false positives and
-localization errors of the camera baseline and the fused model, each tagged (duplicate, class confusion,
-mislocalized, hallucination) and rendered in BEV.
+**Failure cases** (2 m matching; `results/failure_examples/{pretrained,fused}/`, 30 BEV renders each):
+
+| | misses | missed outright | mislocalized (2–4 m off) | false positives | hallucinated | duplicates | worst loc. error mostly |
+|---|---|---|---|---|---|---|---|
+| Camera | 1,030 | 358 | 567 | 4,873 | 2,349 | 1,025 | translation (2,252 of 3,637) |
+| Fusion | 206 | 120 | 48 | 5,408 | 2,121 | 1,838 | scale (3,064 of 4,461) |
+
+The camera's misses are mostly **depth errors, not blindness**: 567 of 1,030 have a same-class
+prediction 2–4 m away, i.e. seen but placed at the wrong range. Fusion cuts misses by 80%. Its
+remaining errors shift from *where* to *how big*, because LiDAR fixes position but not box size. Its
+false positives are mostly low-score, so they cost little AP, but they do reach the tracker (see below).
 
 **Tracking (AB3DMOT, score ≥ 0.3, 2 m CLEAR-MOT):**
 
