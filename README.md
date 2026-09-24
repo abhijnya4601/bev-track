@@ -83,14 +83,21 @@ mAAE = 1 because no attributes are predicted. The 95% CIs come from a paired fra
 **Camera vs LiDAR.** LiDAR is +0.268 mAP ahead (paired 95% CI +0.248 to +0.287), and its
 translation error is less than half (0.30 m vs 0.71 m): cameras have to infer depth, LiDAR measures it.
 The gap is largest where camera depth is worst. Beyond 40 m, LiDAR mAP is 0.257 vs the camera's 0.044.
+That bucket covers only cars and trucks at 40–50 m (269 objects), because the devkit's class ranges cut
+pedestrians, cyclists and barriers off at 40 m or less.
 From 0–20 m to 20–40 m, camera mAP keeps 62% of its value and LiDAR keeps 70%.
 
 **Late fusion adds +0.033 mAP over LiDAR alone (CI +0.022 to +0.044), and all of the gain is at range.**
 0–20 m: +0.001 (CI −0.011 to +0.011, no effect). 20–40 m: +0.039 (CI +0.017 to +0.060). Per class,
 fusion helps where the camera is relatively strong or LiDAR is sparse: barrier 0.654 → 0.804, truck
-0.587 → 0.648, cyclist 0.599 → 0.630. It **hurts** car (0.847 → 0.832) and pedestrian (0.913 → 0.850),
-where LiDAR is already near its ceiling and unconfirmed camera boxes only add false positives. The fusion
-parameters were fixed a priori, not tuned on these scenes. A per-class camera weight is the obvious next step.
+0.587 → 0.648, cyclist 0.599 → 0.630. It **hurts** car (0.847 → 0.832) and pedestrian (0.913 → 0.850).
+An ablation (`python -m src.fusion --ablation`, diagnosis only) shows why: the noisy-OR score boost for
+boxes both sensors agree on drives **both** the gains and the losses. For barriers the camera's agreement
+is informative (camera alone: 0.79 AP vs LiDAR 0.65). For pedestrians the camera also "agrees" with
+some LiDAR false positives, lifting them above real detections. Duplicate camera boxes and unconfirmed
+camera boxes barely matter (suppressing duplicates changed AP by ≤ 0.002). The fusion parameters were
+fixed a priori. The principled fix is to learn per class how much camera agreement is worth, on the
+training scenes, not these.
 
 **Camera fine-tuning hurt.** Head-only −0.020 (CI −0.026 to −0.014); most layers −0.064 (CI −0.072 to
 −0.056). The 5-class taxonomy is a pure merge of existing nuScenes classes, so relabeling the pretrained
@@ -101,7 +108,7 @@ head recovers 4.4 of the 6.4 points, so most of the damage came from updating th
 representation. Conclusion: when a new taxonomy is a merge of existing classes, relabel the outputs.
 Don't fine-tune on mini-scale data.
 
-**By distance (pretrained):** mAP 0.591 (0–20 m) → 0.367 (20–40 m) → 0.044 (40 m+). Cyclists fall
+**By distance (pretrained):** mAP 0.591 (0–20 m) → 0.367 (20–40 m) → 0.044 (40 m+, cars and trucks only). Cyclists fall
 fastest: 0.41 → 0.07. The fine-tuned model shows the same shape, shifted down.
 
 **By condition:** the clean scenes are all day and dry, so lighting and weather can't be measured
@@ -111,11 +118,9 @@ ped 0.43 vs 0.47, truck 0.37 vs 0.36). The raw mAP gap (0.454 vs 0.385) is becau
 no barrier GT after filtering (its 4 raw barriers are all 33–54 m away, beyond the devkit's
 30 m barrier range).
 
-**Failure cases (fine-tuned, 2 m matching):** of 3,503 FPs, 1,650 are hallucinations, 1,049
-mislocalized (a same-class GT within 2–4 m), 670 duplicates and 134 class confusions. Of 1,344 FNs,
-763 are mislocalized rather than missed outright. Most errors are localization, not detection:
-2,066 of the worst-matched boxes are dominated by translation error. Renders are in
-`results/failure_examples/`.
+**Failure cases:** `results/failure_examples/{pretrained,fused}/`. The worst misses, false positives and
+localization errors of the camera baseline and the fused model, each tagged (duplicate, class confusion,
+mislocalized, hallucination) and rendered in BEV.
 
 **Tracking (AB3DMOT, score ≥ 0.3, 2 m CLEAR-MOT):**
 

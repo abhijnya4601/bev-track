@@ -16,6 +16,11 @@ Per sample and class:
      so agreement between sensors raises confidence
   3. unpaired boxes survive with their score scaled by ``lidar_only_weight`` / ``camera_only_weight``
 
+``--ablation`` prints a 2×2 table (paired score: noisy-OR vs LiDAR's own score; unconfirmed camera
+boxes: kept at ×0.5 vs dropped). It is diagnosis, not model selection: the reported method stays the a
+priori default. On the clean scenes it showed that the noisy-OR boost drives both fusion's gains
+(barrier, truck) and its losses (pedestrian, car); duplicates and camera-only boxes barely matter.
+
 Every parameter is fixed a priori, **not tuned on the evaluation scenes**. Tuning fusion weights on the 4
 clean scenes and then reporting results on them would leak test information into the method.
 """
@@ -35,6 +40,7 @@ class FusionConfig:
         "car": 2.0, "truck": 2.5, "pedestrian": 1.0, "cyclist": 1.0, "barrier": 1.0})
     lidar_only_weight: float = 1.0
     camera_only_weight: float = 0.5  # a camera box LiDAR did not confirm is more likely a depth error
+    paired_score: str = "noisy_or"  # "noisy_or" | "lidar" (ablation: ignore camera agreement)
 
 
 def fuse_sample(camera: List[Box], lidar: List[Box], cfg: FusionConfig = FusionConfig()) -> List[Box]:
@@ -54,12 +60,13 @@ def fuse_sample(camera: List[Box], lidar: List[Box], cfg: FusionConfig = FusionC
             fused = Box(**{**lb.__dict__})
             if best >= 0:
                 used.add(best)
-                fused.score = 1.0 - (1.0 - lb.score) * (1.0 - cam[best].score)
+                fused.score = (1.0 - (1.0 - lb.score) * (1.0 - cam[best].score)
+                               if cfg.paired_score == "noisy_or" else lb.score)
             else:
                 fused.score = lb.score * cfg.lidar_only_weight
             out.append(fused)
         for j, cb in enumerate(cam):
-            if j not in used:
+            if j not in used and cfg.camera_only_weight > 0:
                 b = Box(**{**cb.__dict__})
                 b.score = cb.score * cfg.camera_only_weight
                 out.append(b)
@@ -71,15 +78,33 @@ def fuse_all(camera: Dict[str, List[Box]], lidar: Dict[str, List[Box]], cfg: Fus
     return {tok: fuse_sample(camera.get(tok, []), lidar.get(tok, []), cfg) for tok in set(camera) | set(lidar)}
 
 
+def print_ablation(samples, cam, lid) -> None:
+    from src.classes import CLASSES
+    from src.eval.slice_eval import run
+
+    rows = [("LiDAR alone", None)] + [
+        (f"paired={ps:<8} camera-only={'x0.5' if w else 'dropped'}", FusionConfig(paired_score=ps, camera_only_weight=w))
+        for ps in ("lidar", "noisy_or") for w in (0.0, 0.5)]
+    print("fusion ablation (diagnosis only; reported method = noisy_or, x0.5)")
+    for name, cfg in rows:
+        res, *_ = run(samples, lid if cfg is None else fuse_all(cam, lid, cfg))
+        a = res[("all", "all")]
+        print(f"  {name:<40} mAP {a.mean_ap:.3f} | " + " ".join(f"{c[:4]} {a.per_class[c].ap:.3f}" for c in CLASSES))
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--gt", required=True, help="GT file (only used for the sample list and ego poses)")
     ap.add_argument("--camera", required=True)
     ap.add_argument("--lidar", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--ablation", action="store_true", help="also print the 2x2 fusion-rule ablation table")
     args = ap.parse_args(argv)
     samples = load_gt(args.gt)
-    fused = fuse_all(load_predictions(args.camera, samples), load_predictions(args.lidar, samples))
+    cam, lid = load_predictions(args.camera, samples), load_predictions(args.lidar, samples)
+    if args.ablation:
+        print_ablation(samples, cam, lid)
+    fused = fuse_all(cam, lid)
     save_predictions(args.out, fused, {"method": "late fusion (LiDAR geometry, noisy-OR scores)",
                                        "config": FusionConfig().__dict__})
     print(f"Fused {len(fused)} samples -> {args.out}")

@@ -469,7 +469,7 @@ footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line);
     if (has('lidar') && has('pretrained')) {
       const c = D.models.pretrained, l = D.models.lidar;
       out.push(`<b>Camera vs LiDAR.</b> LiDAR mAP ${fmt(l.summary.mAP)} vs camera ${fmt(c.summary.mAP)}${pairedText('lidar', 'pretrained', 'all')}. `
-        + `By distance: ${B.map((b) => `${b} ${fmt(c.distance_mAP[b])} → ${fmt(l.distance_mAP[b])}`).join(', ')} (camera → LiDAR). `
+        + `By distance: ${B.map((b) => `${b} ${fmt(c.distance_mAP[b])} → ${fmt(l.distance_mAP[b])}`).join(', ')} (camera → LiDAR; 40 m+ is cars and trucks only). `
         + `Camera mAP keeps ${Math.round(100 * c.distance_mAP[B[1]] / c.distance_mAP[B[0]])}% of its near-range value at 20–40 m; LiDAR keeps ${Math.round(100 * l.distance_mAP[B[1]] / l.distance_mAP[B[0]])}%.`);
     }
     if (has('fused') && has('lidar')) {
@@ -494,7 +494,8 @@ footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line);
     const items = [
       `<b>${lab(top)}</b> has the best mAP (${fmt(s(top).mAP)}), ahead of ${byMap.slice(1).map((m) => `${lab(m)} (${fmt(s(m).mAP)})`).join(', ')}.`
         + (top === 'pretrained' ? ' The 5 classes are merges of nuScenes classes, so relabeling the pretrained outputs already solves the task. Fine-tuning on 6 scenes can only move the model toward those scenes.' : ''),
-      `Distance dominates: mAP falls from ${fmt(dm[B[0]])} within 20 m to ${fmt(dm[B[1]])} at 20–40 m and ${fmt(dm[B[2]])} beyond 40 m.`
+      `Distance dominates: mAP falls from ${fmt(dm[B[0]])} within 20 m to ${fmt(dm[B[1]])} at 20–40 m and ${fmt(dm[B[2]])} beyond 40 m`
+        + ` (the 40 m+ bucket only contains ${CLS.filter((c) => pd[B[2]][c] !== null).join(' and ')}: the devkit's class ranges cut the other classes off at 40 m or less).`
         + (drops.length ? ` <b>${drops[0][0]}</b> degrades fastest (AP ${fmt(pd[B[0]][drops[0][0]])} → ${fmt(pd[B[1]][drops[0][0]])}, −${Math.round(drops[0][1] * 100)}%).` : ''),
       `Tracking on ${lab(top)} detections: MOTA ${fmt(trk.ALL.MOTA)}, ${trk.ALL.IDSW} ID switches, ${trk.ALL.FRAG} fragmentations.`
         + (trkCls.length > 1 ? ` Best-tracked class: ${trkCls[0]} (MOTA ${fmt(trk[trkCls[0]].MOTA)}); worst: ${trkCls[trkCls.length - 1]} (${fmt(trk[trkCls[trkCls.length - 1]].MOTA)}). Switch the viewer to <i>Tracks</i> to see identities change.` : ''),

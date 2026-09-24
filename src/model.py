@@ -82,7 +82,8 @@ def remap_checkpoint(src: str, dst: str, src_classes=BEVFORMER_NUSC_CLASSES, dst
 # Prediction export (mmdet3d v0.17 outputs -> BEV-Track ego-frame boxes)
 # ---------------------------------------------------------------------------
 
-def lidar_boxes_to_ego(boxes_3d, scores, labels, class_names: Sequence[str], info: dict, sample_token: str):
+def lidar_boxes_to_ego(boxes_3d, scores, labels, class_names: Sequence[str], info: dict, sample_token: str,
+                       keep_names: bool = False):
     """Convert one sample's BEVFormer output (LiDARInstance3DBoxes, mmdet3d<1.0 conventions) to ego-frame Boxes.
 
     Mirrors ``NuScenesDataset.output_to_nusc_box`` + ``lidar_nusc_box_to_global`` (ego half only):
@@ -96,7 +97,8 @@ def lidar_boxes_to_ego(boxes_3d, scores, labels, class_names: Sequence[str], inf
     tensor = boxes_3d.tensor.numpy()
     out = []
     for i in range(len(tensor)):
-        name = detection_name_to_class(class_names[int(labels[i])])
+        raw = class_names[int(labels[i])]
+        name = raw if keep_names else detection_name_to_class(raw)
         if name is None:
             continue
         b = Box(sample_token, centers[i], tensor[i, 3:6], -tensor[i, 6] - np.pi / 2, name,
@@ -106,7 +108,7 @@ def lidar_boxes_to_ego(boxes_3d, scores, labels, class_names: Sequence[str], inf
 
 
 def export(config: str, checkpoint: str, out: str, bevformer_root: str = 'third_party/BEVFormer',
-           ann_file: str = None) -> None:
+           ann_file: str = None, keep_names: bool = False) -> None:
     """Run inference with BEVFormer's own test loop and write BEV-Track predictions (ego frame).
 
     Works for any mmdet3d-0.17 nuScenes detector whose outputs are ``pts_bbox`` LiDARInstance3DBoxes:
@@ -164,7 +166,7 @@ def export(config: str, checkpoint: str, out: str, bevformer_root: str = 'third_
     for info, res in zip(dataset.data_infos, outputs):
         pb = res['pts_bbox']
         preds[info['token']] = lidar_boxes_to_ego(pb['boxes_3d'], pb['scores_3d'].numpy(), pb['labels_3d'].numpy(),
-                                                  class_names, info, info['token'])
+                                                  class_names, info, info['token'], keep_names)
     save_predictions(out, preds, {'model': 'BEVFormer-tiny', 'config': config, 'checkpoint': checkpoint,
                                   'class_names': list(class_names)})
     print(f'Wrote predictions for {len(preds)} samples to {out}')
@@ -184,12 +186,15 @@ def main(argv=None):
     e.add_argument('--ann-file', default=None,
                    help='Override data.test.ann_file (relative to the BEVFormer root), '
                         'e.g. data/nuscenes/nuscenes_infos_temporal_clean_5cls.pkl')
+    e.add_argument('--raw-names', action='store_true',
+                   help="Keep the model's own class names (e.g. the 10 nuScenes ones) instead of mapping to 5; "
+                        'used by scripts/devkit_check.py')
     args = ap.parse_args(argv)
     if args.cmd == 'remap':
         for k in remap_checkpoint(args.src, args.dst):
             print('remapped', k)
     else:
-        export(args.config, args.checkpoint, args.out, args.bevformer_root, args.ann_file)
+        export(args.config, args.checkpoint, args.out, args.bevformer_root, args.ann_file, args.raw_names)
 
 
 if __name__ == '__main__':

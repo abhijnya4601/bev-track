@@ -30,6 +30,13 @@ def test_fusion_unpaired_and_class_separation():
                    ("pedestrian", 10): pytest.approx(0.8 * 0.5), ("car", 30): pytest.approx(0.6 * 0.5)}
 
 
+def test_fusion_ablation_switches():
+    cam = [b(10.5, score=0.6), b(30.0, score=0.6)]
+    lid = [b(10.0, score=0.5)]
+    only_lidar_score = fuse_sample(cam, lid, FusionConfig(paired_score="lidar", camera_only_weight=0.0))
+    assert len(only_lidar_score) == 1 and only_lidar_score[0].score == pytest.approx(0.5)  # == LiDAR alone
+
+
 def test_fusion_radius_is_per_class():
     cam = [b(11.5, name="pedestrian", size=(0.7, 0.7, 1.8), score=0.5)]
     lid = [b(10.0, name="pedestrian", size=(0.7, 0.7, 1.8), score=0.5)]

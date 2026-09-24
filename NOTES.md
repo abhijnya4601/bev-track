@@ -141,8 +141,32 @@ output file. macOS git matches ignore patterns case-insensitively, so it also ma
 `src/synthetic.py`. I force-added the file and scoped the pattern to `results/`. Lesson: a green local
 test run proves nothing about a fresh clone. Check CI after pushing, and use narrow ignore patterns.
 
+## Review follow-ups: fusion, devkit check, wording
+
+**Fusion's car/pedestrian loss is not duplicates.** A reviewer suggested dropping unpaired camera boxes
+near LiDAR boxes. I estimated it from the demo data first (which holds all predictions with score ≥ 0.15
+and reproduces the official LiDAR mAP to 0.001): AP changed by ≤ 0.002. So I isolated the parts. With
+LiDAR's own score for paired boxes and no camera-only boxes, fusion reproduces LiDAR exactly, as it should.
+Turning on the noisy-OR boost alone produces both the barrier/truck gains and the pedestrian loss. The
+camera's agreement is informative for some classes and misleading for others. I didn't adopt a variant
+chosen on the test scenes. I added `--ablation` so the table is reproducible, and noted the principled
+fix (per-class weighting learned on `seen` scenes).
+
+**Devkit end-to-end check.** My metric tests only proved my AP matches the devkit's *formula*. Nothing
+checked my export or coordinate conventions against the official scorer. `scripts/devkit_check.py`
+converts my export back to the official submission format and runs the untouched `DetectionEval`.
+Its self-test (ground truth fed through the same conversion) first scored car 0.82, not 1.0. The cause
+was in the self-test, not the conversion: the devkit drops zero-point GT, my fake "predictions" didn't,
+and those extras became false positives tied at score 1.0. After mirroring the filter, every class
+present in mini_val scores 1.000. Pipeline step 11 then compares my export of the pretrained BEVFormer
+against BEVFormer's own `tools/test.py --eval bbox` on the same checkpoint and split.
+
+**Wording.** The 40 m+ bucket only holds cars and trucks (the devkit caps pedestrians, cyclists and
+barriers at ≤ 40 m), so "LiDAR 0.257 vs camera 0.044 beyond 40 m" now says that. I also moved failure
+analysis from the weakest model to the camera baseline and the fused model.
+
 ## Next
 - [ ] Score calibration or a threshold sweep before tracking (fusion loses 0.25 MOTA vs LiDAR at 0.3)
 - [ ] Per-class fusion camera weight, tuned on the `seen` scenes only
-- [ ] Sanity: the devkit's official 10-class eval of the pretrained BEVFormer on mini_val should land
-      near BEVFormer's published full-val numbers (NDS 35.4 / mAP 25.2), allowing for 2-scene noise
+- [ ] Run pipeline step 11 and record: my export vs BEVFormer's own eval on mini_val (should agree)
+- [ ] Per-class fusion weighting learned on `seen` scenes (needs camera + LiDAR predictions there)

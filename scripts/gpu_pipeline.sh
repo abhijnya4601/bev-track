@@ -19,7 +19,7 @@ if ! python -c "from PIL import Image; Image.LINEAR" 2>/dev/null; then
   python -m pip install -q "pillow==9.5.0"
 fi
 
-STEPS=" ${*:-0 1 2 3 4 5 6 7 8 9 10} "
+STEPS=" ${*:-0 1 2 3 4 5 6 7 8 9 10 11} "
 step() { echo; echo "=== $* ==="; }
 want() { [[ "$STEPS" == *" $1 "* ]]; }
 
@@ -96,8 +96,6 @@ if want 7; then
       --checkpoint work_dirs/bevformer_tiny_5cls/latest.pth --out results/preds_finetuned.json
   python -m src.eval.slice_eval --gt data/processed/gt_clean.json --pred results/preds_finetuned.json \
       --out results/finetuned
-  python -m src.eval.failure_cases --gt data/processed/gt_clean.json --pred results/preds_finetuned.json \
-      --out results/failure_examples --min-score 0.2
 fi
 if want 8; then
   step "8. Tracking"
@@ -120,12 +118,17 @@ fi
 if want 10; then
   step "10. Late fusion, tracking, bootstrap intervals, demo data (CPU)"
   GT=data/processed/gt_clean.json
-  python -m src.fusion --gt $GT --camera results/preds_pretrained.json --lidar results/preds_lidar.json --out results/preds_fused.json
+  python -m src.fusion --gt $GT --camera results/preds_pretrained.json --lidar results/preds_lidar.json \
+      --out results/preds_fused.json --ablation
   python -m src.eval.slice_eval --gt $GT --pred results/preds_fused.json --out results/fused
   for m in lidar fused; do
     echo "--- tracking on $m detections ---"
     python -m src.track --gt $GT --pred results/preds_$m.json --out results/tracks_$m.json \
         --metrics-out results/tracking_$m.csv | grep -E "MOTA|^ALL"
+  done
+  for m in pretrained fused; do  # failure analysis on the camera baseline and the best model
+    echo "--- failure cases: $m ---"
+    python -m src.eval.failure_cases --gt $GT --pred results/preds_$m.json --out results/failure_examples/$m --min-score 0.2
   done
   PREDS=""
   for m in pretrained headonly finetuned lidar fused; do
@@ -133,5 +136,21 @@ if want 10; then
   done
   python -m src.eval.bootstrap --gt $GT $PREDS -n 1000 --out results/bootstrap.json
   python scripts/build_demo.py --gt $GT $PREDS --bootstrap results/bootstrap.json --out results/demo_data.json
+fi
+if want 11; then
+  require_infos
+  step "11. Official devkit check: our export vs BEVFormer's own evaluation (mini_val, 10 classes)"
+  # Same checkpoint, same split, two independent export paths. Agreement validates our LiDAR->ego->global
+  # conversion, yaw and velocity conventions end to end.
+  python scripts/devkit_check.py --self-test --gt data/processed/gt_mini_val.json --out results/devkit_selftest
+  python -m src.model export --config "$BF/projects/configs/bevformer/bevformer_tiny.py" \
+      --checkpoint ckpts/bevformer_tiny_epoch_24.pth --raw-names --out results/preds_pretrained_raw10_minival.json
+  echo "--- ours: BEV-Track export -> devkit ---"
+  python scripts/devkit_check.py --gt data/processed/gt_mini_val.json \
+      --pred results/preds_pretrained_raw10_minival.json --out results/devkit_check
+  echo "--- reference: BEVFormer tools/test.py --eval bbox ---"
+  (cd "$BF" && PYTHONPATH="$BF:$PYTHONPATH" python -m torch.distributed.launch --nproc_per_node=1 --master_port=29505 \
+      tools/test.py projects/configs/bevformer/bevformer_tiny.py "$REPO/ckpts/bevformer_tiny_epoch_24.pth" \
+      --launcher pytorch --eval bbox 2>&1 | grep -E "^mAP|^NDS|NuScenes/mAP|NuScenes/NDS" | tail -4)
 fi
 echo; echo "Done. Tables in results/pretrained, results/finetuned; failure plots in results/failure_examples."
