@@ -88,6 +88,12 @@ Environment build and steps 0-4 worked on the first try (mmdet3d wheel compiled 
 so pip picked 10.x. → Pinned `pillow==9.5.0` (notebook constraints + Dockerfile). A dependency
 that is imported but never used for BEVFormer-tiny (DD3D) still has to import cleanly.
 
+**Step 2 then failed with `No module named 'tools.data_converter'`.** BEVFormer's `create_data.py`
+imports `indoor_converter`, which imports `tools.data_converter.*` absolutely. That only resolves with
+the BEVFormer root on PYTHONPATH (its `dist_*.sh` wrappers set it; calling the script directly
+doesn't). → Set `PYTHONPATH=$BF` for create_data. Also made steps 5-7 build missing info files
+themselves, so an upstream failure shows its real error instead of a downstream FileNotFoundError.
+
 ## Next
 - [x] Download v1.0-mini; run `data/prepare_nuscenes.py report` and `gt`
 - [ ] Get the CAN bus expansion (login) → Drive
