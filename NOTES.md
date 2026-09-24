@@ -80,6 +80,14 @@ measured on scenes the pretrained model has seen. The honest condition slice her
   enforced with a pip constraints file on every install.
 - All wheel URLs were verified to exist for cp38 before writing the notebook.
 
+## 2026-09-24: first Colab run
+
+Environment build and steps 0-4 worked on the first try (mmdet3d wheel compiled and cached in Drive).
+**Step 5 died importing BEVFormer's plugin:** `projects.mmdet3d_plugin` → dd3d → detectron2 0.6 →
+`detectron2.data.transforms` uses `PIL.Image.LINEAR`, **removed in Pillow 10**. Pillow wasn't pinned,
+so pip picked 10.x. → Pinned `pillow==9.5.0` (notebook constraints + Dockerfile). A dependency
+that is imported but never used for BEVFormer-tiny (DD3D) still has to import cleanly.
+
 ## Next
 - [x] Download v1.0-mini; run `data/prepare_nuscenes.py report` and `gt`
 - [ ] Get the CAN bus expansion (login) → Drive

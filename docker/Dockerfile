@@ -42,6 +42,8 @@ RUN git clone https://github.com/open-mmlab/mmdetection3d.git /opt/mmdetection3d
 # DEVIATION 1: the guide installs detectron2 from git HEAD, which no longer builds against
 # torch 1.9. v0.6 has a prebuilt cu111/torch1.9 wheel. BEVFormer only imports it for its DD3D
 # code, but the plugin's __init__ imports that unconditionally.
+# Pillow 10 removed Image.LINEAR, which detectron2 0.6 uses at import time.
+RUN pip install --no-cache-dir "pillow==9.5.0"
 RUN pip install --no-cache-dir detectron2 \
         -f https://dl.fbaipublicfiles.com/detectron2/wheels/cu111/torch1.9/index.html
 
