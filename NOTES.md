@@ -100,6 +100,11 @@ at runtime (keeps the pinned submodule untouched in git). Lesson: my first fix t
 ("not on the path") without checking *which* `tools` was being imported. Also made steps 5-7 build missing info files
 themselves, so an upstream failure shows its real error instead of a downstream FileNotFoundError.
 
+**Pillow came back at 10.x before training** (Colab session restart + an older notebook copy without
+the pin), same `Image.LINEAR` crash in step 6. → `gpu_pipeline.sh` now checks for `Image.LINEAR` and
+reinstalls pillow 9.5.0 itself. Fixing it in one place (the notebook) wasn't enough, because the env
+can be rebuilt from a different place.
+
 ## Next
 - [x] Download v1.0-mini; run `data/prepare_nuscenes.py report` and `gt`
 - [ ] Get the CAN bus expansion (login) → Drive

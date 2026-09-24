@@ -12,6 +12,13 @@ REPO=$(pwd)
 BF=$REPO/third_party/BEVFormer
 export PYTHONPATH=$REPO:${PYTHONPATH:-}
 
+# Preflight: detectron2 0.6 (imported by BEVFormer's plugin) needs PIL.Image.LINEAR, removed in Pillow 10.
+# Anything that reinstalls Pillow (a fresh env, an older copy of the Colab notebook) silently breaks steps 5-7.
+if ! python -c "from PIL import Image; Image.LINEAR" 2>/dev/null; then
+  echo ">>> Pillow >= 10 found; installing pillow==9.5.0 (detectron2 0.6 needs Image.LINEAR)"
+  python -m pip install -q "pillow==9.5.0"
+fi
+
 STEPS=" ${*:-0 1 2 3 4 5 6 7 8} "
 step() { echo; echo "=== $* ==="; }
 want() { [[ "$STEPS" == *" $1 "* ]]; }
