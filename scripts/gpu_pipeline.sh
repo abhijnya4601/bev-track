@@ -26,17 +26,37 @@ if want 1; then
   ln -sfn "$REPO/data/nuscenes" "$BF/data/nuscenes"
   ln -sfn "$REPO/data/can_bus" "$BF/data/can_bus"
 fi
-if want 2; then
+run_step2() {
   step "2. BEVFormer info files (temporal infos + CAN bus)"
+  mkdir -p "$BF/data"
+  ln -sfn "$REPO/data/nuscenes" "$BF/data/nuscenes"
+  ln -sfn "$REPO/data/can_bus" "$BF/data/can_bus"
+  [ -d "$REPO/data/nuscenes/v1.0-mini" ] || { echo "ERROR: data/nuscenes/v1.0-mini missing (run the data cell)"; exit 1; }
+  [ -d "$REPO/data/can_bus" ] || { echo "ERROR: data/can_bus missing (run the data cell; check can_bus.zip)"; exit 1; }
   (cd "$BF" && python tools/create_data.py nuscenes --root-path ./data/nuscenes --out-dir ./data/nuscenes \
       --extra-tag nuscenes --version v1.0-mini --canbus ./data)
-fi
-if want 3; then
+  ls -la data/nuscenes/*.pkl
+}
+run_step3() {
   step "3. Split report, GT files, 5-class info files"
   python data/prepare_nuscenes.py report
   python data/prepare_nuscenes.py gt
   python data/prepare_nuscenes.py remap-infos --infos-dir data/nuscenes
-fi
+}
+# Steps 5-7 need the 5-class info files; build them (and show any error) if they are missing.
+require_infos() {
+  if [ ! -f data/nuscenes/nuscenes_infos_temporal_clean_5cls.pkl ] || [ ! -f data/nuscenes/nuscenes_infos_temporal_seen_5cls.pkl ]; then
+    echo ">>> 5-class info files missing; running steps 2 and 3 first"
+    [ -f data/nuscenes/nuscenes_infos_temporal_train.pkl ] || run_step2
+    run_step3
+  fi
+  mkdir -p "$BF/data"
+  ln -sfn "$REPO/data/nuscenes" "$BF/data/nuscenes"
+  ln -sfn "$REPO/data/can_bus" "$BF/data/can_bus"
+}
+
+if want 2; then run_step2; fi
+if want 3; then run_step3; fi
 if want 4; then
   step "4. Pretrained checkpoint"
   mkdir -p ckpts
@@ -44,6 +64,7 @@ if want 4; then
       https://github.com/zhiqi-li/storage/releases/download/v1.0/bevformer_tiny_epoch_24.pth
 fi
 if want 5; then
+  require_infos
   step "5. Baseline: unmodified 10-class checkpoint on the clean scenes, mapped to 5 classes"
   python -m src.model export --config "$BF/projects/configs/bevformer/bevformer_tiny.py" \
       --checkpoint ckpts/bevformer_tiny_epoch_24.pth \
@@ -53,10 +74,12 @@ if want 5; then
       --out results/pretrained
 fi
 if want 6; then
+  require_infos
   step "6. Fine-tune the 5-class head on the 'seen' scenes"
   python -m src.train --gpus 1 ${TRAIN_CFG_OPTIONS:+--cfg-options $TRAIN_CFG_OPTIONS}
 fi
 if want 7; then
+  require_infos
   step "7. Fine-tuned model on the same clean scenes"
   python -m src.model export --config configs/bevformer_tiny_nusc.py \
       --checkpoint work_dirs/bevformer_tiny_5cls/latest.pth --out results/preds_finetuned.json
